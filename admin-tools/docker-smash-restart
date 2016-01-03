@@ -1,0 +1,35 @@
+#!/usr/bin/python
+import sys,os, subprocess,time
+ 
+def check_running(process_name,cmd):
+    process = subprocess.Popen(cmd, shell=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    stdout = (process.communicate()[0]).encode('ascii','ignore')
+    if((stdout.find(process_name) != -1)):
+        return True
+    else:
+        return False      
+def main(arguments):
+    if len(arguments)==2:
+        process_name = "smashbox-deamon"
+        cmd = "docker exec -it %s /bin/ps -C %s"%(arguments[1],process_name)
+        print "takes %s "%arguments[1]    
+        try:
+            while True:
+                if check_running(process_name,cmd)==False:
+                    print "Restarting..."
+                    subprocess.call("docker restart %s"%arguments[1], shell=True)
+                    break
+                time.sleep(1)
+        except Exception,e:
+            print "ERROR: %s\nFor docker usage you need to be root and specify existing container name"%e 
+    else:
+        print "specify correct docker name as an argument"     
+       
+if __name__ == '__main__':
+    """    """
+    arguments = sys.argv
+    main(arguments)
+
+
+
+
