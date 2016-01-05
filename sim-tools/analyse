@@ -36,42 +36,60 @@ def get_hour_from_timestamp(time):
     end = time.find(':', start)
     return int(time[start:end])
 
-def compare_monit_histsync_graph(results,runid):
+def compare_monit_histsync_graph(results,server):
     fig = plt.figure() 
-    ax = fig.add_subplot(111)
+    fig.suptitle('Monitoring - Histogram - Different Machines\nServer: %s'%(server))
+    ax = fig.add_subplot(121)
+    bx = fig.add_subplot(122)
     avg_total = []
-    values = []
+    values_upl = []
+    values_dwl = []
     xTickMarks = []
-    xTickGraph = []
+    xTickGraph_a = []
+    xTickGraph_b = []
     global_max = []
     for key, objs in results.items() :
-        tmp_values = []
-        for obj in objs:
-            tmp_values.append(obj["value"])
-        size = len(tmp_values)  
-        tmp_values = np.array(tmp_values) 
-        global_max.append(np.max(tmp_values))
-        values.append(tmp_values)
+        upl_values = []
+        dwl_values = []
+        for obj in objs[0]:
+            upl_values.append(obj["value"])
+        for obj in objs[1]:
+            dwl_values.append(obj["value"])
+        upl_values = np.array(upl_values) 
+        dwl_values = np.array(dwl_values) 
+        global_max.append(np.max(upl_values))
+        global_max.append(np.max(dwl_values))
+        values_upl.append(upl_values)
+        values_dwl.append(dwl_values)
         
         xTickMarks.append(key)
     
     global_max= (np.max(global_max))   
     ax.set_xlim(left=0)
+    bx.set_xlim(left=0)
     ax.set_xlim(right=global_max)
-    ind = np.arange(len(xTickMarks))                # the x locations for the groups
-    width = 1                      # the width of the bars
+    bx.set_xlim(right=global_max)
+    ax.set_ylim(top=1)
+    bx.set_ylim(top=1)
     
     # the histogram of the data
-    for value in values:
-        n, bins, patches = ax.hist(values, bins=100, normed=True, histtype='step', range=(0,global_max))
-        xTickGraph.append(patches[0])
+    for value in values_upl:
+        n, bins, patches = ax.hist(value, bins=100, cumulative=True, normed=True, histtype='step', range=(0,global_max))
+        xTickGraph_a.append(patches[0])
     
+    # the histogram of the data
+    for value in values_dwl:
+        n, bins, patches = bx.hist(value, bins=100, cumulative=True, normed=True, histtype='step', range=(0,global_max))
+        xTickGraph_b.append(patches[0])
+    ax.set_title('Upload Stage')
+    bx.set_title('Download Stage')
     ax.set_xlabel('Synchronisation time [s]')
     ax.set_ylabel('Probability')
-    ax.legend(xTickGraph,xTickMarks)
-    plt.title('Monitoring - Histogram\nMachine: %s'%(runid))
+    bx.set_xlabel('Synchronisation time [s]')
+    ax.legend(xTickGraph_a,xTickMarks)
+    bx.legend(xTickGraph_b,xTickMarks)
     plt.grid(True)
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0.03, 1, 0.90])
     plt.draw()
     
 def compare_monit_cm_histsync_graph(results,runid):
@@ -96,6 +114,7 @@ def compare_monit_cm_histsync_graph(results,runid):
     global_max= (np.max(global_max))   
     ax.set_xlim(left=0)
     ax.set_xlim(right=global_max)
+    ax.set_ylim(top=1.2)
     ind = np.arange(len(xTickMarks))                # the x locations for the groups
     width = 1                      # the width of the bars
     
@@ -107,10 +126,11 @@ def compare_monit_cm_histsync_graph(results,runid):
     ax.set_xlabel('Synchronisation time [s]')
     ax.set_ylabel('Probability')
     ax.legend(xTickGraph,xTickMarks)
-    plt.title('Monitoring - Histogram\nMachine: %s'%(runid))
+    plt.title('Monitoring - Histogram - Different Servers\nMachine: %s'%(runid))
     plt.grid(True)
     plt.tight_layout()
-    plt.draw()    
+    plt.draw()  
+      
 def compare_monit_time_graph(results,runid):
     fig = plt.figure() 
     ax = fig.add_subplot(111)
@@ -225,6 +245,85 @@ def compare_monit_sync_graph(results,runid):
     plt.tight_layout()
     plt.draw()
 
+def compare_files_runid(results,tot_err,server):
+    fig = plt.figure() 
+    fig.suptitle('Monitoring - Histogram - Different Machines\nServer: %s'%(server))
+    ax = fig.add_subplot(121)
+    bx = fig.add_subplot(122)
+    values = []
+    passed = []
+    failed = []
+    xTickMarks_a = []
+    xTickMarks_b = []
+    xTickGraph_a = []
+    xTickGraph_b = []
+    global_max = []
+    for key, objs in results.items() :
+        tmp_values = []
+        for obj in objs:
+            tmp_values.append(obj["value"])
+        size = len(tmp_values)  
+        tmp_values = np.array(tmp_values) 
+        global_max.append(np.max(tmp_values))
+        values.append(tmp_values)
+        
+        xTickMarks_a.append(key)
+        
+    for key, objs in tot_err.items() :
+        passed_values = []
+        failed_values = []
+        objs_range=len(objs[0])
+        for i in range(0,objs_range):
+            if objs[0][i]["count"]:
+                obj1=float(objs[0][i]["count"])
+            else:
+                obj1=0.0
+            if objs[1][i]["count"]:
+                obj2=float(objs[1][i]["count"])
+            else:
+                obj2=0.0
+            obj3=obj1+obj2
+            failed_values.append(obj1/obj3*100)
+            passed_values.append(obj2/obj3*100)
+        failed_values = np.array(failed_values) 
+        passed_values = np.array(passed_values) 
+        passed.append(passed_values)
+        failed.append(failed_values)
+        xTickMarks_b.append(key)
+        
+    global_max= (np.max(global_max))   
+    ax.set_xlim(left=0)
+    ax.set_xlim(right=global_max)
+    ax.set_ylim(top=1.2)
+    bx.set_ylim(top=100)
+    ind = np.arange(len(xTickMarks_b))                # the x locations for the groups
+    width = 0.9                      # the width of the bars
+    
+    # the histogram of the data
+    for value in values:
+        n, bins, patches = ax.hist(value, bins=100, cumulative=True, normed=True, histtype='step', range=(0,global_max))
+        xTickGraph_a.append(patches[0])
+    
+    bx.set_xlim(left=-0.1) 
+    bx.set_xlim(right=2)     
+    passed_bar = bx.bar(ind, passed, width, color='b')
+    xTickGraph_b.append(passed_bar[0])
+    failed_bar = bx.bar(ind, failed, width, color='y',bottom=passed)
+    xTickGraph_b.append(failed_bar[0])
+    ax.set_xlabel('Total files synced [n]')
+    ax.set_ylabel('Probability')
+    bx.set_xlabel('Total errors for different machines [n]')
+    bx.set_ylabel('Percentage [%]')
+    ax.legend(xTickGraph_a,xTickMarks_a)
+    bx.legend(xTickGraph_b,('Passed', 'Failed'))
+    bx.set_xticks(ind+0.45)
+    xtickNames = bx.set_xticklabels(xTickMarks_b)
+    plt.setp(xtickNames, rotation=45, fontsize=12)
+    ax.grid(True)
+    bx.grid(False)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.90])
+    plt.draw()
+    
 def run(testset_config): 
     config = testset_config["config"]
     client = InfluxDBClient(config["remote_storage_server"], 8086, config["remote_storage_user"], config["remote_storage_password"], config["remote_database"])
@@ -253,12 +352,25 @@ def run(testset_config):
                         tot = client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s'"%(test["test_name"],"total-syn",type["runid"],server))
                         points[server]=list(tot.get_points())
                     compare_monit_cm_histsync_graph(points,type["runid"])
-                if type["show"]==True and type["type"]=="histogram-sync":
+                if type["show"]==True and type["type"]=="histogram-sync-runid":
                     points = {}
                     server = type["server"]
-                    tot = client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s'"%(test["test_name"],"total-syn",type["runid"],server))
-                    points[server]=list(tot.get_points())
-                    compare_monit_histsync_graph(points,type["runid"])
+                    for runid in type["runid"]:
+                        tot_upl = client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and worker_name='worker0' "%(test["test_name"],"syn",runid,server))
+                        tot_dwl = client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and worker_name='worker1' "%(test["test_name"],"syn",runid,server))
+                        points[runid]=[list(tot_upl.get_points()),list(tot_dwl.get_points())]
+                    compare_monit_histsync_graph(points,server)
+                if type["show"]==True and type["type"]=="compare-files-runid":
+                    tot_files = {}
+                    tot_err = {}
+                    server = type["server"]
+                    for runid in type["runid"]:
+                        tot_files_q = client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s'"%(test["test_name"],"total-files",runid,server))
+                        tot_failed_q = client.query("SELECT count(value) FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and worker_name='worker1' and value=1"%(test["test_name"],"err",runid,server))
+                        tot_passed_q = client.query("SELECT count(value) FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and worker_name='worker1' and value=0"%(test["test_name"],"err",runid,server))
+                        tot_files[runid]=list(tot_files_q.get_points())
+                        tot_err[runid]=[list(tot_failed_q.get_points()),list(tot_passed_q.get_points())]
+                    compare_files_runid(tot_files,tot_err,server)
     plt.show()                
 def main(arguments):
     analyse_path = os.path.join(os.path.dirname(__file__),'analyse.config')
