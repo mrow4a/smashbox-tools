@@ -5,6 +5,8 @@ from influxdb import InfluxDBClient
 import numpy as np
 from gi.overrides.keysyms import upleftcorner
 import matplotlib.mlab as mlab
+from scipy.stats import scoreatpercentile
+
 
 def get_config(path):
     import io    
@@ -36,66 +38,72 @@ def get_hour_from_timestamp(time):
     end = time.find(':', start)
     return int(time[start:end])
 
-def compare_monit_histsync_graph(results,server):
+def percentile_sync_runid(results, server):
     fig = plt.figure() 
     fig.suptitle('Monitoring - Histogram - Different Machines\nServer: %s'%(server))
-    ax = fig.add_subplot(121)
-    bx = fig.add_subplot(122)
-    avg_total = []
-    values_upl = []
-    values_dwl = []
+    values = [[],[],[]]
     xTickMarks = []
     xTickGraph_a = []
     xTickGraph_b = []
     global_max = []
+        
     for key, objs in results.items() :
         upl_values = []
         dwl_values = []
+        tot_values = []
         for obj in objs[0]:
-            upl_values.append(obj["value"])
+            tot_values.append(obj["value"])
+            global_max.append(obj["value"])
         for obj in objs[1]:
+            upl_values.append(obj["value"])
+            global_max.append(obj["value"])
+        for obj in objs[2]:
             dwl_values.append(obj["value"])
-        upl_values = np.array(upl_values) 
-        dwl_values = np.array(dwl_values) 
-        global_max.append(np.max(upl_values))
-        global_max.append(np.max(dwl_values))
-        values_upl.append(upl_values)
-        values_dwl.append(dwl_values)
-        
+            global_max.append(obj["value"])
+        values[0].append(np.array(tot_values))
+        values[1].append(np.array(upl_values))
+        values[2].append(np.array(dwl_values))
         xTickMarks.append(key)
+        
+    ind = np.arange(len(xTickMarks))    
+    global_max= (np.max(global_max)) + 10  
     
-    global_max= (np.max(global_max))   
-    ax.set_xlim(left=0)
-    bx.set_xlim(left=0)
-    ax.set_xlim(right=global_max)
-    bx.set_xlim(right=global_max)
-    ax.set_ylim(top=1)
-    bx.set_ylim(top=1)
-    
-    # the histogram of the data
-    for value in values_upl:
-        n, bins, patches = ax.hist(value, bins=100, cumulative=True, normed=True, histtype='step', range=(0,global_max))
-        xTickGraph_a.append(patches[0])
-    
-    # the histogram of the data
-    for value in values_dwl:
-        n, bins, patches = bx.hist(value, bins=100, cumulative=True, normed=True, histtype='step', range=(0,global_max))
-        xTickGraph_b.append(patches[0])
-    ax.set_title('Upload Stage')
-    bx.set_title('Download Stage')
-    ax.set_xlabel('Synchronisation time [s]')
-    ax.set_ylabel('Probability')
-    bx.set_xlabel('Synchronisation time [s]')
-    ax.legend(xTickGraph_a,xTickMarks)
-    bx.legend(xTickGraph_b,xTickMarks)
-    plt.grid(True)
-    plt.tight_layout(rect=[0, 0.03, 1, 0.90])
+    for i in range(0,3):
+        ax = fig.add_subplot('13%s'%(i+1))
+        for midpoint in range(0,len(xTickMarks)):
+            x= values[i][midpoint]
+            perc = [min(x), scoreatpercentile(x,5), scoreatpercentile(x,25),
+                   scoreatpercentile(x,50), scoreatpercentile(x,75),
+                   scoreatpercentile(x,95), max(x)]
+            
+            ax.broken_barh([(midpoint-.005,.01)], (perc[0], perc[1]-perc[0]), facecolors='black')
+            ax.broken_barh([(midpoint-.005,.01)], (perc[5], perc[6]-perc[5]), facecolors='black')
+            # 10/90
+            ax.broken_barh([(midpoint-.4,.8)], (perc[1], perc[2]-perc[1]), facecolors='b')
+            ax.broken_barh([(midpoint-.4,.8)], (perc[4], perc[5]-perc[4]), facecolors='b')
+            # 25/75
+            ax.broken_barh([(midpoint-.4,.8)], (perc[2], perc[3]-perc[2]), facecolors='y')
+            ax.broken_barh([(midpoint-.4,.8)], (perc[3], perc[4]-perc[3]), facecolors='y')
+        if i==0:
+            ax.set_ylabel('Synchronisation time [s]')
+            ax.set_title('Total - Sync')
+        elif i==1:
+            ax.set_title('Client to Server Sync')
+        elif i==2:
+            ax.set_title('Server to Client Sync')
+            
+        ax.set_xlim(left=-0.6, right=1.6)
+        ax.set_ylim(top=global_max, bottom=0) 
+        ax.set_xticks(ind)
+        xtickNames = ax.set_xticklabels(xTickMarks)
+        plt.setp(xtickNames, rotation=45, fontsize=12)
+        ax.grid(True)
+        plt.tight_layout(rect=[0, 0.03, 1, 0.90])
     plt.draw()
     
-def compare_monit_cm_histsync_graph(results,runid):
+def compare_monit_cm_hist_sync(results,runid):
     fig = plt.figure() 
     ax = fig.add_subplot(111)
-    avg_total = []
     values = []
     xTickMarks = []
     xTickGraph = []
@@ -111,7 +119,7 @@ def compare_monit_cm_histsync_graph(results,runid):
         
         xTickMarks.append(key)
     
-    global_max= (np.max(global_max))   
+    global_max= (np.max(global_max)) + 10    
     ax.set_xlim(left=0)
     ax.set_xlim(right=global_max)
     ax.set_ylim(top=1.2)
@@ -130,120 +138,97 @@ def compare_monit_cm_histsync_graph(results,runid):
     plt.grid(True)
     plt.tight_layout()
     plt.draw()  
-      
-def compare_monit_time_graph(results,runid):
-    fig = plt.figure() 
-    ax = fig.add_subplot(111)
-    xTickMarks = range(0,24)
-    avg_total = []
-    error_total_low = []
-    error_total_high = []
-    values = []
-    for i in range(0,24):
-        avg_total.append([]) 
-        error_total_low.append([]) 
-        error_total_high.append([]) 
-        values.append([])
-        
-    for key, objs in results.items() :
-        for obj in objs:
-            hour = get_hour_from_timestamp(obj["time"])
-            values[hour].append(obj["value"])
     
-    for i in range(0,24): 
-        avg = np.mean(np.array(values[i])) 
-        low, high = get_low_high(avg,values[i])   
-        avg_total[i].append(avg)   
-        error_total_low[i].append(low)
-        error_total_high[i].append(high)
-    ## necessary variables
-    ind = np.arange(len(xTickMarks))                # the x locations for the groups
+def compare_monit_cm_hist_transf(results,runid,server):
+    fig = plt.figure() 
+    fig.suptitle('Monitoring - Histogram - Different Servers\nMachine: %s'%(runid))
+    ax = fig.add_subplot(221)
+    title = ["Client to Server Sync\nUpload Rate", "Client to Server Sync\nDownload Rate"]
+    ax.set_ylabel('Probability')
+    
+    for key, objs in results.items() :
+        values = []
+        for obj in objs["upl_upl"]:
+            values.append(obj["value"])
+        values = np.array(values)
+        global_max = (np.max(values))
+        n, bins, patches = ax.hist(values, bins=100, normed=True, cumulative=True, histtype='step', range=(0,global_max)) 
+        print bins
+    plt.title(title[0])
+    ax.set_xlabel('Transfer rate [B/s]')
+    plt.grid(True)
+    plt.tight_layout()
+    
+    ax = fig.add_subplot(222)
+    for key, objs in results.items() :
+        values = []
+        for obj in objs["upl_dwl"]:
+            values.append(obj["value"])
+        values = np.array(values)
+        global_max = (np.max(values))
+        n, bins, patches = ax.hist(values, bins=100, normed=True, cumulative=True, histtype='step', range=(0,global_max)) 
+    plt.title(title[1])
+    ax.set_xlabel('Transfer rate [B/s]')
+    plt.grid(True)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.90])
+    
+    plt.draw()   
+def compare_time_runid(results,server, max_y):
+    xTickMarks = range(0,25)
+    ind = np.arange(len(xTickMarks)) 
     width = 1                      # the width of the bars
-    # axes and labels
-    for i in range(0,24):
-        ax.bar(ind[i], avg_total[i], width, color='b',
-                yerr=[error_total_low[i],error_total_high[i]],
-                error_kw=dict(capsize=5, elinewidth=2,ecolor='black'))
-    ax.set_xlim(0,len(ind))
-    ax.set_ylim(bottom=0)
-    ax.set_ylabel('Synchronisation Time (s)')     
-    ax.set_xticks(ind)
-    xtickNames = ax.set_xticklabels(xTickMarks)
-    plt.setp(xtickNames, rotation=45, fontsize=10)
-    plt.title('Monitoring - %s\nDistributions of synchronisation times during the day\nMachine: %s'%(key,runid))
-    plt.tight_layout()
-    plt.draw()
+    global_max = []
     
-def compare_monit_sync_graph(results,runid):
-    fig = plt.figure() 
-    ax = fig.add_subplot(111)
-    xTickMarks = []
-    avg_total = []
-    error_total_low = []
-    error_total_high = []
-    avg_upl = []
-    error_upl_low = []
-    error_upl_high = []
-    avg_dwl = []
-    error_dwl_low = []
-    error_dwl_high = []
     for key, objs in results.items() :
-        values = []
         for obj in objs[0]:
-            values.append(obj["value"])
-        values = np.array(values)
-        avg = np.mean(values)
-        low, high = get_low_high(avg,values)     
-        avg_total.append(avg)   
-        error_total_low.append(low)  
-        error_total_high.append(high) 
-        
-        values = []
-        for obj in objs[1]:
-            values.append(obj["value"])
-        values = np.array(values)
-        avg = np.mean(values)
-        low, high = get_low_high(avg,values)     
-        avg_upl.append(avg)   
-        error_upl_low.append(low)
-        error_upl_high.append(high) 
-        
-        values = []
-        for obj in objs[2]:
-            values.append(obj["value"])
-        values = np.array(values)
-        avg = np.mean(values)
-        get_low_high(avg,values)
-        low, high = get_low_high(avg,values)      
-        avg_dwl.append(avg)   
-        error_dwl_low.append(low)
-        error_dwl_high.append(high) 
-        
-        xTickMarks.append(key)
-    ## necessary variables
-    ind = np.arange(len(xTickMarks))                # the x locations for the groups
-    width = 0.3                      # the width of the bars
-    # axes and labels
-    total = ax.bar(ind, avg_total, width, color='b',
-                yerr=[error_total_low,error_total_high],
-                error_kw=dict(capsize=5, elinewidth=2,ecolor='black'))
-    upload = ax.bar(ind+width, avg_upl, width, color='g',
-                yerr=[error_upl_low,error_upl_high],
-                error_kw=dict(capsize=5, elinewidth=2,ecolor='black'))
-    download = ax.bar(ind+2*width, avg_dwl, width, color='y',
-                yerr=[error_dwl_low,error_dwl_high],
-                error_kw=dict(capsize=5, elinewidth=2,ecolor='black'))
-    ax.set_xlim(-0.1,len(ind))
-    ax.set_ylim(bottom=0)
-    ax.set_ylabel('Synchronisation Time (s)')     
-    ax.set_xticks(ind+0.45)
-    xtickNames = ax.set_xticklabels(xTickMarks)
-    plt.setp(xtickNames, rotation=45, fontsize=10)
-    plt.title('Monitoring - distributions of synchronisation times\nMachine: %s'%(runid))
-    ## add a legend
-    ax.legend((total[0], upload[0], download[0]), ('Total', 'Upload', 'Download'))
-    plt.tight_layout()
-    plt.draw()
+            global_max.append(obj["value"])  
+    if max_y == None:  
+        global_max= (np.max(global_max)) + 10 
+    else:
+        global_max=max_y 
+    
+    for key, supobjs in results.items() :
+        fig = plt.figure()
+        for k in range(len(supobjs)):
+            values = [] 
+            objs=supobjs[k]
+            for i in range(0,24):
+                values.append([])
+            ax = fig.add_subplot('21%s'%(k+1))
+            for obj in objs:
+                hour = get_hour_from_timestamp(obj["time"])
+                values[hour].append(obj["value"])
+            
+            for i in range(0,24):
+                # min/max
+                midpoint = i+0.5
+                x= values[i]
+                perc = [min(x), scoreatpercentile(x,5), scoreatpercentile(x,25),
+                       scoreatpercentile(x,50), scoreatpercentile(x,75),
+                       scoreatpercentile(x,95), max(x)]
+                
+                ax.broken_barh([(midpoint-.005,.01)], (perc[0], perc[1]-perc[0]), facecolors='black')
+                ax.broken_barh([(midpoint-.005,.01)], (perc[5], perc[6]-perc[5]), facecolors='black')
+                # 10/90
+                ax.broken_barh([(midpoint-.4,.8)], (perc[1], perc[2]-perc[1]), facecolors='b')
+                ax.broken_barh([(midpoint-.4,.8)], (perc[4], perc[5]-perc[4]), facecolors='b')
+                # 25/75
+                ax.broken_barh([(midpoint-.4,.8)], (perc[2], perc[3]-perc[2]), facecolors='y')
+                ax.broken_barh([(midpoint-.4,.8)], (perc[3], perc[4]-perc[3]), facecolors='y')
+                    
+            ax.set_xticks(ind)
+            ax.set_ylim(bottom=0, top=global_max)
+            ax.set_xlim(left=0, right=24)
+            xtickNames = ax.set_xticklabels(xTickMarks)
+            plt.setp(xtickNames, rotation=45, fontsize=10)
+            if k==0:
+                title='Upload'
+            else:
+                title='Download'
+            plt.title(title)
+            plt.tight_layout(rect=[0, 0.03, 1, 0.90])
+        fig.suptitle('Monitoring - %s\nDistributions of synchronisation times during the day\nTest Machine: %s'%(server,key))
+        plt.draw()
 
 def compare_files_runid(results,tot_err,server):
     fig = plt.figure() 
@@ -291,10 +276,10 @@ def compare_files_runid(results,tot_err,server):
         failed.append(failed_values)
         xTickMarks_b.append(key)
         
-    global_max= (np.max(global_max))   
+    global_max= (np.max(global_max)) + 10   
     ax.set_xlim(left=0)
     ax.set_xlim(right=global_max)
-    ax.set_ylim(top=1.2)
+    ax.set_ylim(top=1.1)
     bx.set_ylim(top=100)
     ind = np.arange(len(xTickMarks_b))                # the x locations for the groups
     width = 0.9                      # the width of the bars
@@ -306,9 +291,9 @@ def compare_files_runid(results,tot_err,server):
     
     bx.set_xlim(left=-0.1) 
     bx.set_xlim(right=2)     
-    passed_bar = bx.bar(ind, passed, width, color='b')
+    passed_bar = bx.bar(ind, passed, width, color='b',bottom=failed)
     xTickGraph_b.append(passed_bar[0])
-    failed_bar = bx.bar(ind, failed, width, color='y',bottom=passed)
+    failed_bar = bx.bar(ind, failed, width, color='y')
     xTickGraph_b.append(failed_bar[0])
     ax.set_xlabel('Total files synced [n]')
     ax.set_ylabel('Probability')
@@ -332,34 +317,32 @@ def run(testset_config):
     for test in tests:
         if test["test_name"]=="monit":
             for type in test["graph"]:
-                if type["show"]==True and type["type"]=="compare-sync":
-                    points = {}
-                    for server in type["server"]:
-                        tot = client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s'"%(test["test_name"],"total-syn",type["runid"],server))
-                        upl = client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and worker_name='%s'"%(test["test_name"],"syn",type["runid"],server,"worker0"))
-                        dwl = client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and worker_name='%s'"%(test["test_name"],"syn",type["runid"],server,"worker1"))
-                        points[server]=[list(tot.get_points()),list(upl.get_points()),list(dwl.get_points())]
-                    compare_monit_sync_graph(points,type["runid"])
-                if type["show"]==True and type["type"]=="compare-time":
-                    points = {}
-                    server = type["server"]
-                    tot = client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s'"%(test["test_name"],"total-syn",type["runid"],server))
-                    points[server]=list(tot.get_points())
-                    compare_monit_time_graph(points,type["runid"])
-                if type["show"]==True and type["type"]=="cm-histogram-sync":
-                    points = {}
-                    for server in type["server"]:
-                        tot = client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s'"%(test["test_name"],"total-syn",type["runid"],server))
-                        points[server]=list(tot.get_points())
-                    compare_monit_cm_histsync_graph(points,type["runid"])
-                if type["show"]==True and type["type"]=="histogram-sync-runid":
+                if type["show"]==True and type["type"]=="compare-time-runid":
                     points = {}
                     server = type["server"]
                     for runid in type["runid"]:
                         tot_upl = client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and worker_name='worker0' "%(test["test_name"],"syn",runid,server))
                         tot_dwl = client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and worker_name='worker1' "%(test["test_name"],"syn",runid,server))
                         points[runid]=[list(tot_upl.get_points()),list(tot_dwl.get_points())]
-                    compare_monit_histsync_graph(points,server)
+                    compare_time_runid(points,server,type["max_y"])
+                      
+                if type["show"]==True and type["type"]=="cm-histogram-sync":
+                    points = {}
+                    for server in type["server"]:
+                        tot = client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s'"%(test["test_name"],"total-syn",type["runid"],server))
+                        points[server]=list(tot.get_points())
+                    compare_monit_cm_hist_sync(points,type["runid"])
+                    
+                if type["show"]==True and type["type"]=="percentile-sync-runid":
+                    points = {}
+                    server = type["server"]
+                    for runid in type["runid"]:
+                        tot_upl = client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and worker_name='worker0' "%(test["test_name"],"syn",runid,server))
+                        tot_dwl = client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and worker_name='worker1' "%(test["test_name"],"syn",runid,server))
+                        tot = client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s'"%(test["test_name"],"total-syn",runid,server))
+                        points[runid]=[list(tot.get_points()),list(tot_upl.get_points()),list(tot_dwl.get_points())]
+                    percentile_sync_runid(points,server)
+                    
                 if type["show"]==True and type["type"]=="compare-files-runid":
                     tot_files = {}
                     tot_err = {}
@@ -371,6 +354,19 @@ def run(testset_config):
                         tot_files[runid]=list(tot_files_q.get_points())
                         tot_err[runid]=[list(tot_failed_q.get_points()),list(tot_passed_q.get_points())]
                     compare_files_runid(tot_files,tot_err,server)
+                
+                if type["show"]==True and type["type"]=="cm-histogram-transf":
+                    points = {}
+                    runid = type["runid"]
+                    for server in type["server"]:
+                        points[server] = {}
+                        upl_upl = client.query("SELECT value,syncid FROM \"%s-%s\" WHERE runid='%s' and server_name='%s'"%(test["test_name"],"0-upl",runid,server))
+                        upl_dwl = client.query("SELECT value,syncid FROM \"%s-%s\" WHERE runid='%s' and server_name='%s'"%(test["test_name"],"0-dwl",runid,server))
+                        tot_upl = client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and worker_name='worker0' "%(test["test_name"],"syn",runid,server))
+                        points[server]["upl_upl"]=list(upl_upl.get_points())
+                        points[server]["upl_dwl"]=list(upl_dwl.get_points())
+                        points[server]["tot_upl"]=list(tot_upl.get_points())
+                    compare_monit_cm_hist_transf(points,runid,server)
     plt.show()                
 def main(arguments):
     analyse_path = os.path.join(os.path.dirname(__file__),'analyse.config')
