@@ -1,5 +1,5 @@
 #!/usr/bin/python
-import sys,os, subprocess
+import sys,os, subprocess,time
 import matplotlib.pyplot as plt
 from influxdb import InfluxDBClient
 import numpy as np
@@ -103,7 +103,7 @@ def percentile_sync_runid(results, server):
     
 def compare_monit_cm_hist_sync(results,runid):
     fig = plt.figure() 
-    ax = fig.add_subplot(111)
+    ax = plt.subplot(111)
     values = []
     xTickMarks = []
     xTickGraph = []
@@ -122,7 +122,7 @@ def compare_monit_cm_hist_sync(results,runid):
     global_max= (np.max(global_max)) + 10    
     ax.set_xlim(left=0)
     ax.set_xlim(right=global_max)
-    ax.set_ylim(top=1.2)
+    ax.set_ylim(top=1.0)
     ind = np.arange(len(xTickMarks))                # the x locations for the groups
     width = 1                      # the width of the bars
     
@@ -133,42 +133,97 @@ def compare_monit_cm_hist_sync(results,runid):
     
     ax.set_xlabel('Synchronisation time [s]')
     ax.set_ylabel('Probability')
-    ax.legend(xTickGraph,xTickMarks)
+    ax.legend(xTickGraph,xTickMarks,fontsize=7,fancybox=True, loc='lower right').get_frame().set_alpha(0.5)
     plt.title('Monitoring - Histogram - Different Servers\nMachine: %s'%(runid))
     plt.grid(True)
-    plt.tight_layout()
     plt.draw()  
     
 def compare_monit_cm_hist_transf(results,runid,server):
+    def sizeof_fmt(num, suffix='B'):
+        for unit in ['','k','M','G','T','P','E','Z']:
+            if abs(num) < 1000.0:
+                return "%3.0f%s%s" % (num, unit, suffix)
+            num /= 1000.0
+        return "%.1f%s%s" % (num, 'Yi', suffix)
     fig = plt.figure() 
     fig.suptitle('Monitoring - Histogram - Different Servers\nMachine: %s'%(runid))
-    ax = fig.add_subplot(221)
-    title = ["Client to Server Sync\nUpload Rate", "Client to Server Sync\nDownload Rate"]
-    ax.set_ylabel('Probability')
-    
+    ax = fig.add_subplot(211)
+    title = ["Client to Server Sync\nUpload Rate", "Server to Client Sync\nDownload Rate"]
+    Graph = []
+    Marks = []
+    global_max = []
+    global_min = []
+    scs_sync_array = {}
+    values = {}
     for key, objs in results.items() :
-        values = []
+        scs_sync_array[key]=[]
+        values[key]=[]
+        for scs_sync in objs["scs_syncs"]:
+            scs_sync_array[key].append(scs_sync["time"])
         for obj in objs["upl_upl"]:
-            values.append(obj["value"])
-        values = np.array(values)
-        global_max = (np.max(values))
-        n, bins, patches = ax.hist(values, bins=100, normed=True, cumulative=True, histtype='step', range=(0,global_max)) 
-        print bins
-    plt.title(title[0])
-    ax.set_xlabel('Transfer rate [B/s]')
-    plt.grid(True)
-    plt.tight_layout()
+            if (int(obj["syncid"]) in scs_sync_array[key]):
+                values[key].append(obj["value"])
+        values[key] = np.array(values[key])
+        global_max.append(np.max(values[key]))
+        global_min.append(np.min(values[key]))
+        
+    global_max = (np.max(global_max))
+    global_min = (np.min(global_min))
     
-    ax = fig.add_subplot(222)
     for key, objs in results.items() :
-        values = []
-        for obj in objs["upl_dwl"]:
-            values.append(obj["value"])
-        values = np.array(values)
-        global_max = (np.max(values))
-        n, bins, patches = ax.hist(values, bins=100, normed=True, cumulative=True, histtype='step', range=(0,global_max)) 
+        histbins = 10 ** np.linspace(np.log10(global_min), np.log10(global_max), 100)
+        n, bins, patches = ax.hist(values[key], bins=histbins, normed=True, cumulative=True, histtype='step')
+        Graph.append(patches[0]) 
+        Marks.append(key)
+      
+    ax.legend(Graph,Marks,fontsize=7,fancybox=True, loc='upper left').get_frame().set_alpha(0.5)
+    ax.set_xscale("log")
+    ax.set_xlim(left=0)
+    ax.set_xlim(right=global_max)
+    xtickNames = []
+    xticks = ax.get_xticks().tolist()
+    for xtick in xticks:
+        xtickNames.append(sizeof_fmt(int(xtick)))
+    ax.set_xticklabels(xtickNames)
+    plt.title(title[0])
+    ax.set_xlabel('Logaritmic scale - Transfer rate [unit/s]')
+    plt.grid(True)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.90]) 
+    
+    ax = fig.add_subplot(212)
+    Graph = []
+    Marks = []
+    global_max = []
+    global_min = []
+    for key, objs in results.items() :
+        values[key]=[]
+        for obj in objs["dwl_dwl"]:
+            if (int(obj["syncid"]) in scs_sync_array[key]):
+                values[key].append(obj["value"])
+        values[key] = np.array(values[key])
+        global_max.append(np.max(values[key]))
+        global_min.append(np.min(values[key]))
+        
+    global_max = (np.max(global_max))
+    global_min = (np.min(global_min))
+    
+    for key, objs in results.items() :
+        histbins = 10 ** np.linspace(np.log10(global_min), np.log10(global_max), 100)
+        n, bins, patches = ax.hist(values[key], bins=histbins, normed=True, cumulative=True, histtype='step')
+        Graph.append(patches[0]) 
+        Marks.append(key)
+        
+    ax.legend(Graph,Marks,fontsize=7,fancybox=True, loc='upper left').get_frame().set_alpha(0.5)
+    ax.set_xscale("log")
+    ax.set_xlim(left=global_min)
+    ax.set_xlim(right=global_max)
+    xtickNames = []
+    xticks = ax.get_xticks().tolist()
+    for xtick in xticks:
+        xtickNames.append(sizeof_fmt(int(xtick)))
+    ax.set_xticklabels(xtickNames)
     plt.title(title[1])
-    ax.set_xlabel('Transfer rate [B/s]')
+    ax.set_xlabel('Logaritmic scale - Transfer rate [unit/s]')
     plt.grid(True)
     plt.tight_layout(rect=[0, 0.03, 1, 0.90])
     
@@ -360,12 +415,13 @@ def run(testset_config):
                     runid = type["runid"]
                     for server in type["server"]:
                         points[server] = {}
-                        upl_upl = client.query("SELECT value,syncid FROM \"%s-%s\" WHERE runid='%s' and server_name='%s'"%(test["test_name"],"0-upl",runid,server))
-                        upl_dwl = client.query("SELECT value,syncid FROM \"%s-%s\" WHERE runid='%s' and server_name='%s'"%(test["test_name"],"0-dwl",runid,server))
-                        tot_upl = client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and worker_name='worker0' "%(test["test_name"],"syn",runid,server))
-                        points[server]["upl_upl"]=list(upl_upl.get_points())
-                        points[server]["upl_dwl"]=list(upl_dwl.get_points())
-                        points[server]["tot_upl"]=list(tot_upl.get_points())
+                        scs_syncs = list((client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s'"%(test["test_name"],"total-syn",runid,server), epoch='u')).get_points())
+                        upl_upl = list((client.query("SELECT value,syncid FROM \"%s-%s\" WHERE runid='%s' and server_name='%s'"%(test["test_name"],"0-upl",runid,server))).get_points())
+                        dwl_dwl = list((client.query("SELECT value,syncid FROM \"%s-%s\" WHERE runid='%s' and server_name='%s'"%(test["test_name"],"1-dwl",runid,server))).get_points())
+                        
+                        points[server]["upl_upl"]=upl_upl
+                        points[server]["dwl_dwl"]=dwl_dwl
+                        points[server]["scs_syncs"]=scs_syncs
                     compare_monit_cm_hist_transf(points,runid,server)
     plt.show()                
 def main(arguments):
