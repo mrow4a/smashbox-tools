@@ -145,28 +145,45 @@ def compare_monit_cm_hist_transf(results,runid,server):
                 return "%3.0f%s%s" % (num, unit, suffix)
             num /= 1000.0
         return "%.1f%s%s" % (num, 'Yi', suffix)
-    fig = plt.figure() 
-    fig.suptitle('Monitoring - Histogram - Different Servers\nMachine: %s'%(runid))
-    ax = fig.add_subplot(211)
-    title = ["Client to Server Sync\nUpload Rate", "Server to Client Sync\nDownload Rate"]
+    
+    #transfer graph - UPLOADING
+    fig1 = plt.figure() 
+    fig1.suptitle('Monitoring - Histogram - Different Servers\nMachine: %s'%(runid))
+    ax = fig1.add_subplot(211)
+    plt.title("Client to Server Sync\nUploading Rate")  
     Graph = []
     Marks = []
     global_max = []
     global_min = []
-    scs_sync_array = {}
+    scs_sync_array_time_upl = {}
+    scs_sync_array_value_upl = {}
+    scs_sync_array_server_upl = {}
     values = {}
+    values_syncid_upl = {}
     for key, objs in results.items() :
-        scs_sync_array[key]=[]
+        scs_sync_array_time_upl[key]=[]
         values[key]=[]
-        for scs_sync in objs["scs_syncs"]:
-            scs_sync_array[key].append(scs_sync["time"])
+        for scs_sync in objs["scs_syncs_upl"]:
+            scs_sync_array_time_upl[key].append(scs_sync["time"])
+            scs_sync_array_value_upl[scs_sync["time"]]=scs_sync["value"]
+            scs_sync_array_server_upl[scs_sync["time"]]=key
         for obj in objs["upl_upl"]:
-            if (int(obj["syncid"]) in scs_sync_array[key]):
+            if (int(obj["syncid"]) in scs_sync_array_time_upl[key]):
                 values[key].append(obj["value"])
+                if values_syncid_upl.has_key(obj["syncid"]):
+                    values_syncid_upl[obj["syncid"]].append(obj["time"])
+                else:
+                    values_syncid_upl[obj["syncid"]]=[obj["time"]]
+        for obj in objs["upl_dwl"]:
+            if (int(obj["syncid"]) in scs_sync_array_time_upl[key]):
+                if values_syncid_upl.has_key(obj["syncid"]):
+                    values_syncid_upl[obj["syncid"]].append(obj["time"])
+                else:
+                    values_syncid_upl[obj["syncid"]]=[obj["time"]]
         values[key] = np.array(values[key])
         global_max.append(np.max(values[key]))
         global_min.append(np.min(values[key]))
-        
+    
     global_max = (np.max(global_max))
     global_min = (np.min(global_min))
     
@@ -175,31 +192,52 @@ def compare_monit_cm_hist_transf(results,runid,server):
         n, bins, patches = ax.hist(values[key], bins=histbins, normed=True, cumulative=True, histtype='step')
         Graph.append(patches[0]) 
         Marks.append(key)
-      
+    
     ax.legend(Graph,Marks,fontsize=7,fancybox=True, loc='upper left').get_frame().set_alpha(0.5)
     ax.set_xscale("log")
     ax.set_xlim(left=0)
     ax.set_xlim(right=global_max)
+    ax.set_ylim(top=1.0)
     xtickNames = []
     xticks = ax.get_xticks().tolist()
     for xtick in xticks:
         xtickNames.append(sizeof_fmt(int(xtick)))
     ax.set_xticklabels(xtickNames)
-    plt.title(title[0])
     ax.set_xlabel('Logaritmic scale - Transfer rate [unit/s]')
     plt.grid(True)
-    plt.tight_layout(rect=[0, 0.03, 1, 0.90]) 
-    
-    ax = fig.add_subplot(212)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95]) 
+        
+    #transfer graph - DOWNLOADING
+    ax = fig1.add_subplot(212)
+    plt.title("Server to Client Sync\nDownloading Rate")  
     Graph = []
     Marks = []
     global_max = []
     global_min = []
+    scs_sync_array_time_dwl = {}
+    scs_sync_array_value_dwl = {}
+    scs_sync_array_server_dwl = {}
+    values_syncid_dwl = {}
     for key, objs in results.items() :
+        scs_sync_array_time_dwl[key]=[]
         values[key]=[]
+        for scs_sync in objs["scs_syncs_dwl"]:
+            scs_sync_array_time_dwl[key].append(scs_sync["time"])
+            scs_sync_array_value_dwl[scs_sync["time"]]=scs_sync["value"]
+            scs_sync_array_server_dwl[scs_sync["time"]]=key
         for obj in objs["dwl_dwl"]:
-            if (int(obj["syncid"]) in scs_sync_array[key]):
+            if (int(obj["syncid"]) in scs_sync_array_time_dwl[key]):
                 values[key].append(obj["value"])
+                if values_syncid_dwl.has_key(obj["syncid"]):
+                    values_syncid_dwl[obj["syncid"]].append(obj["time"])
+                else:
+                    values_syncid_dwl[obj["syncid"]]=[obj["time"]]
+        for obj in objs["dwl_upl"]:
+            if (int(obj["syncid"]) in scs_sync_array_time_dwl[key]):
+                if values_syncid_dwl.has_key(obj["syncid"]):
+                    values_syncid_dwl[obj["syncid"]].append(obj["time"])
+                else:
+                    values_syncid_dwl[obj["syncid"]]=[obj["time"]]
         values[key] = np.array(values[key])
         global_max.append(np.max(values[key]))
         global_min.append(np.min(values[key]))
@@ -212,21 +250,163 @@ def compare_monit_cm_hist_transf(results,runid,server):
         n, bins, patches = ax.hist(values[key], bins=histbins, normed=True, cumulative=True, histtype='step')
         Graph.append(patches[0]) 
         Marks.append(key)
-        
     ax.legend(Graph,Marks,fontsize=7,fancybox=True, loc='upper left').get_frame().set_alpha(0.5)
     ax.set_xscale("log")
     ax.set_xlim(left=global_min)
     ax.set_xlim(right=global_max)
+    ax.set_ylim(top=1.0)
     xtickNames = []
     xticks = ax.get_xticks().tolist()
     for xtick in xticks:
         xtickNames.append(sizeof_fmt(int(xtick)))
     ax.set_xticklabels(xtickNames)
-    plt.title(title[1])
     ax.set_xlabel('Logaritmic scale - Transfer rate [unit/s]')
     plt.grid(True)
-    plt.tight_layout(rect=[0, 0.03, 1, 0.90])
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     
+    #transfer graph - UPLOADING - IDLE TIME
+    fig2 = plt.figure() 
+    fig2.suptitle('Monitoring - Histogram - Different Servers\nMachine: %s'%(runid))
+    ax = fig2.add_subplot(321)
+    plt.title("Client to Server Sync\nFirst-Last packet time to sync time", fontsize=12)  
+    values_server = {}
+    values_server_sum = {}
+    values_server_diff = {}
+    Graph = []
+    Marks = []
+    global_min = []
+    for key, objs in values_syncid_upl.items():   
+        if not values_server.has_key(scs_sync_array_server_upl[int(key)]):
+            values_server[scs_sync_array_server_upl[int(key)]]=[]
+            
+        if not values_server_sum.has_key(scs_sync_array_server_upl[int(key)]):
+            values_server_sum[scs_sync_array_server_upl[int(key)]]=[]
+          
+        if not values_server_diff.has_key(scs_sync_array_server_upl[int(key)]):
+            values_server_diff[scs_sync_array_server_upl[int(key)]]=[]  
+        objs.sort()     
+        obj_zero = objs[0]/1000000.0
+        obs_len = len(objs)
+        sum_diff=0.0
+        for i in range(1, obs_len):
+            difference = objs[i]/1000000.0-obj_zero
+            if difference>1.0:
+                fraction=((difference-1.0)/scs_sync_array_value_upl[int(key)])*100
+                values_server[scs_sync_array_server_upl[int(key)]].append(fraction)
+                sum_diff=sum_diff+difference-1.0
+            obj_zero = objs[i]/1000000.0
+        values_server_sum[scs_sync_array_server_upl[int(key)]].append(((objs[obs_len-1]/1000000.0-objs[0]/1000000.0)/scs_sync_array_value_upl[int(key)])*100)
+        values_server_diff[scs_sync_array_server_upl[int(key)]].append((sum_diff/scs_sync_array_value_upl[int(key)])*100)
+        global_min.append(np.min(np.array(values_server_sum[scs_sync_array_server_upl[int(key)]])))
+    
+    global_min = (np.min(global_min))
+    for key, objs in results.items() :
+        n, bins, patches = ax.hist(values_server_sum[key], bins=100, normed=True, cumulative=True, histtype='step', range=(global_min, 100))
+        Graph.append(patches[0]) 
+        Marks.append(key)
+    ax.set_xlim(left=global_min)
+    ax.set_xlim(right=100)
+    ax.legend(Graph,Marks,fontsize=7,fancybox=True, loc='upper left').get_frame().set_alpha(0.5)
+    ax.set_xlabel('Fraction [%]')
+    plt.grid(True)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95]) 
+    
+    ax = fig2.add_subplot(323)
+    plt.title("Client to Server Sync\nNo transfer periods duration to sync time", fontsize=12) 
+    Graph = []
+    Marks = []
+    for key, objs in results.items():
+        n, bins, patches = ax.hist(values_server[key], bins=100, normed=True, cumulative=True, histtype='step')
+        Graph.append(patches[0]) 
+        Marks.append(key)
+    ax.legend(Graph,Marks,fontsize=7,fancybox=True, loc='lower right').get_frame().set_alpha(0.5)
+    ax.set_xlabel('Fraction [%]')
+    plt.grid(True)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95]) 
+    
+    ax = fig2.add_subplot(325)
+    plt.title("Client to Server Sync\nNo transfer total time to sync time", fontsize=12) 
+    Graph = []
+    Marks = []
+    for key, objs in results.items():
+        n, bins, patches = ax.hist(values_server_diff[key], bins=100, normed=True, cumulative=True, histtype='step')
+        Graph.append(patches[0]) 
+        Marks.append(key)
+    ax.legend(Graph,Marks,fontsize=7,fancybox=True, loc='lower right').get_frame().set_alpha(0.5)
+    ax.set_xlabel('Fraction [%]')
+    plt.grid(True)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95]) 
+    #transfer graph - DOWNLOADING - IDLE TIME
+    ax = fig2.add_subplot(322)
+    plt.title("Server to Client Sync\nFirst-Last packet time to sync time", fontsize=12)  
+    values_server = {}
+    values_server_sum = {}
+    values_server_diff = {}
+    Graph = []
+    Marks = []
+    global_min = []
+    for key, objs in values_syncid_dwl.items():    
+        if not values_server.has_key(scs_sync_array_server_dwl[int(key)]):
+            values_server[scs_sync_array_server_dwl[int(key)]]=[]
+            
+        if not values_server_sum.has_key(scs_sync_array_server_dwl[int(key)]):
+            values_server_sum[scs_sync_array_server_dwl[int(key)]]=[]
+        
+        if not values_server_diff.has_key(scs_sync_array_server_dwl[int(key)]):
+            values_server_diff[scs_sync_array_server_dwl[int(key)]]=[]
+        objs.sort() 
+        obj_zero = objs[0]/1000000.0
+        obs_len = len(objs)
+        sum_diff=0.0
+        for i in range(1, obs_len):
+            difference = objs[i]/1000000.0-obj_zero
+            if difference>1.0:
+                fraction=((difference-1.0)/scs_sync_array_value_dwl[int(key)])*100
+                values_server[scs_sync_array_server_dwl[int(key)]].append(fraction)
+                sum_diff=sum_diff+difference-1.0
+            obj_zero = objs[i]/1000000.0
+        values_server_sum[scs_sync_array_server_dwl[int(key)]].append(((objs[obs_len-1]/1000000.0-objs[0]/1000000.0)/scs_sync_array_value_dwl[int(key)])*100)
+        values_server_diff[scs_sync_array_server_dwl[int(key)]].append((sum_diff/scs_sync_array_value_dwl[int(key)])*100)
+        global_min.append(np.min(np.array(values_server_sum[scs_sync_array_server_dwl[int(key)]])))
+    
+    global_min = (np.min(global_min))
+    for key, objs in results.items() :
+        n, bins, patches = ax.hist(values_server_sum[key], bins=100, normed=True, cumulative=True, histtype='step', range=(global_min, 100))
+        Graph.append(patches[0]) 
+        Marks.append(key)
+    ax.set_xlim(left=global_min)
+    ax.set_xlim(right=100)
+    ax.legend(Graph,Marks,fontsize=7,fancybox=True, loc='upper left').get_frame().set_alpha(0.5)
+    ax.set_xlabel('Fraction [%]')
+    plt.grid(True)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95]) 
+    
+    ax = fig2.add_subplot(324)
+    plt.title("Server to Client Sync\nNo transfer periods duration to sync time", fontsize=12) 
+    Graph = []
+    Marks = []
+    for key, objs in results.items():
+        n, bins, patches = ax.hist(values_server[key], bins=100, normed=True, cumulative=True, histtype='step')
+        Graph.append(patches[0]) 
+        Marks.append(key)
+    ax.legend(Graph,Marks,fontsize=7,fancybox=True, loc='lower right').get_frame().set_alpha(0.5)
+    ax.set_xlabel('Fraction [%]')
+    plt.grid(True)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95]) 
+    
+    ax = fig2.add_subplot(326)
+    plt.title("Server to Client Sync\nNo transfer total time to sync time", fontsize=12) 
+    Graph = []
+    Marks = []
+    for key, objs in results.items():
+        n, bins, patches = ax.hist(values_server_diff[key], bins=100, normed=True, cumulative=True, histtype='step')
+        Graph.append(patches[0]) 
+        Marks.append(key)
+    ax.legend(Graph,Marks,fontsize=7,fancybox=True, loc='lower right').get_frame().set_alpha(0.5)
+    ax.set_xlabel('Fraction [%]')
+    plt.grid(True)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95]) 
+    #end
     plt.draw()   
 def compare_time_runid(results,server, max_y):
     xTickMarks = range(0,25)
@@ -415,13 +595,19 @@ def run(testset_config):
                     runid = type["runid"]
                     for server in type["server"]:
                         points[server] = {}
-                        scs_syncs = list((client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s'"%(test["test_name"],"total-syn",runid,server), epoch='u')).get_points())
-                        upl_upl = list((client.query("SELECT value,syncid FROM \"%s-%s\" WHERE runid='%s' and server_name='%s'"%(test["test_name"],"0-upl",runid,server))).get_points())
-                        dwl_dwl = list((client.query("SELECT value,syncid FROM \"%s-%s\" WHERE runid='%s' and server_name='%s'"%(test["test_name"],"1-dwl",runid,server))).get_points())
+                        scs_syncs_upl = list((client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and worker_name='worker0'"%(test["test_name"],"syn",runid,server), epoch='u')).get_points())
+                        scs_syncs_dwl = list((client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and worker_name='worker1'"%(test["test_name"],"syn",runid,server), epoch='u')).get_points())
+                        upl_upl = list((client.query("SELECT value,syncid FROM \"%s-%s\" WHERE runid='%s' and server_name='%s'"%(test["test_name"],"0-upl",runid,server), epoch='u')).get_points())
+                        dwl_dwl = list((client.query("SELECT value,syncid FROM \"%s-%s\" WHERE runid='%s' and server_name='%s'"%(test["test_name"],"1-dwl",runid,server), epoch='u')).get_points())
+                        upl_dwl = list((client.query("SELECT value,syncid FROM \"%s-%s\" WHERE runid='%s' and server_name='%s'"%(test["test_name"],"0-dwl",runid,server), epoch='u')).get_points())
+                        dwl_upl = list((client.query("SELECT value,syncid FROM \"%s-%s\" WHERE runid='%s' and server_name='%s'"%(test["test_name"],"1-upl",runid,server), epoch='u')).get_points())
                         
                         points[server]["upl_upl"]=upl_upl
                         points[server]["dwl_dwl"]=dwl_dwl
-                        points[server]["scs_syncs"]=scs_syncs
+                        points[server]["upl_dwl"]=upl_dwl
+                        points[server]["dwl_upl"]=dwl_upl
+                        points[server]["scs_syncs_upl"]=scs_syncs_upl
+                        points[server]["scs_syncs_dwl"]=scs_syncs_dwl
                     compare_monit_cm_hist_transf(points,runid,server)
     plt.show()                
 def main(arguments):
