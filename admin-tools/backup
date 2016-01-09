@@ -16,29 +16,42 @@ def get_config(path):
         print "path does not exists %s"%path
         sys.exit()
         
-def compress_to_file(data, file_name):
+def compress_to_file(data, file_name,index):
     import io
-    home = os.path.join(os.path.expanduser("~"),"smashbox-backup")
+    home = os.path.join(os.path.expanduser("~"),"smashbox-backup",file_name)
     if not(os.path.exists(home)):
         subprocess.call("mkdir -p %s"%home, shell=True)
-    file_path = "%s%s"%(os.path.join(home,file_name),".bz2")
+    file_path = "%s%s"%(os.path.join(home,index),".bz2")
     output = bz2.BZ2File(file_path, 'wb')
     try:
-        output.write(bz2.compress(data))
+        output.write(bz2.compress(str(data)))
     finally:
         output.close()
-        return file_path
+        print "[PULL] Finished compression %s"%index
+        return home
         
 def get_data_from_bz2(file_path):
-    import json
+    import simplejson
     import os
-    if(os.path.exists(file_path)):
-        input_file = bz2.BZ2File(file_path, 'rb')
+    bs2_listed = os.listdir(file_path)
+    result = {}
+    for bs2_file in bs2_listed:
+        file = os.path.join(file_path,bs2_file)
+        input_file = bz2.BZ2File(file, 'rb')
         try:
             data = input_file.read()
+            print "[PUSH] Read data from compresed file %s, decompresing...."%bs2_file
+        except Exception, e:
+            print e
         finally:
             input_file.close() 
-            return bz2.decompress(data)
+            data = eval(bz2.decompress(data))
+            for key, objs in data.items() : 
+                if result.has_key(key):
+                    result[key]=result[key] + objs
+                else:
+                    result[key]=objs
+    return result
 
 def pull(config):
     client = InfluxDBClient(config["remote_storage_server"], 8086, config["remote_storage_user"], config["remote_storage_password"], config["remote_database"])
@@ -52,17 +65,27 @@ def pull(config):
     print "[PULL] Got list of series"
     result_dict = {}
     now = (datetime.datetime.now()).strftime('%s%f')
+    file_name = datetime.datetime.fromtimestamp(float(now)/ 1000000.0).isoformat()
     for serie in series:
         if serie.find("pkt")==-1:
             q = "SELECT * FROM \"%s\" WHERE time <= %su;"%(serie,now)
-            result_dict[serie] = list((client.query(q)).get_points())
-    print "[PULL] Got backup of series"
-    #print str(result_dict)
-    strdict = str(result_dict)
-    file_name = datetime.datetime.fromtimestamp(float(now)/ 1000000.0).isoformat()
-    file_path = compress_to_file(strdict, file_name)
-    print "[PULL] Finished compression"
-    print '[PULL] File in      :',file_path
+            result_dict = list((client.query(q)).get_points())
+            result_dict_len = len(result_dict)
+            
+            i=result_dict_len-10000
+            if i<=0:
+                file_path = compress_to_file({serie:result_dict[0:result_dict_len]}, file_name,"%s%s"%(serie,result_dict_len))
+                #print "done","%s to %s"%(0,result_dict_len),serie,result_dict_len
+            else:
+                while i>0:
+                    file_path = compress_to_file({serie:result_dict[result_dict_len-i-10000:result_dict_len-i]}, file_name,"%s%s"%(serie,result_dict_len-i))
+                    #print "done","%s to %s"%(result_dict_len-i-10000,result_dict_len-i),serie,result_dict_len
+                    if i-10000<=0:
+                        file_path = compress_to_file({serie:result_dict[result_dict_len-i:result_dict_len]}, file_name,"%s%s"%(serie,result_dict_len))
+                        #print "done","%s to %s"%(result_dict_len-i,result_dict_len),serie,result_dict_len
+                    i=i-10000
+                    
+    print "[PULL] Got backup of series in %s"%file_path
     
 def push(config):
     try:
@@ -71,10 +94,10 @@ def push(config):
         if not os.path.exists(file_path):
             raise Exception
         print "[PUSH] File exists, pushing %s .."%file_path
-        data = eval(get_data_from_bz2(file_path))
+        data = get_data_from_bz2(file_path)
         if not data:
             raise Exception
-        print "[PUSH] Decompressed"
+        print "[PUSH] Decompressed and evaluated"
         measurements = []
         for key, objs in data.items() :
             for obj in objs:
@@ -95,8 +118,9 @@ def push(config):
                     }
                 }
                 measurements.append(measurement)
-        client.write_points(measurements, batch_size=128)
-        print "[PUSH] Sent to the remote"
+        print "[PUSH] Measurements ready to send, sending.."
+        client.write_points(measurements, batch_size=1024)
+        print "[PUSH] Sent to the remote. Finished"
     except Exception, e:
         print "[CONFIG] %s"%e
         print "[CONFIG] Please specify <push> <backup config path> and valid bz2_path to valid bz2 file in config file"
