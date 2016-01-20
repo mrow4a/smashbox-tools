@@ -34,9 +34,12 @@ def get_low_high(avg,values):
         return np.std(values),np.std(values) 
              
 def get_hour_from_timestamp(timestamp):
-    start = timestamp.find('T') + 1
-    end = timestamp.find(':', start)
-    return int(timestamp[start:end])
+    try:
+        start = timestamp.find('T') + 1
+        end = timestamp.find(':', start)
+        return int(timestamp[start:end])
+    except:
+        return datetime.datetime.fromtimestamp(timestamp/1000000).hour
 
 def parse_time(time_start, time_stop):
     if time_start==None:
@@ -54,9 +57,9 @@ def parse_time(time_start, time_stop):
     else:
         print "EXITING..! Start time is later than stop time!"
         sys.exit()
-def compare_monit_cm_hist_sync_test(pp, results,server):
+def compare_monit_cm_hist_sync_test(pp, results,server,alias):
     fig = plt.figure() 
-    fig.suptitle('Sync time histogram for different tests\nServer: %s'%(server))
+    fig.suptitle('Sync time cumulative distribution\nServer: %s'%(alias))
     values = [[],[]]
     xTickMarks = []
     global_maxmin = []
@@ -76,30 +79,31 @@ def compare_monit_cm_hist_sync_test(pp, results,server):
         
     global_max= (np.max(global_maxmin))  
     global_min= (np.min(global_maxmin))  
-    histbins = 10 ** np.linspace(np.log10(global_min), np.log10(global_max), 100)
     
     for i in range(0,2):
         xTickGraph = []
         ax = fig.add_subplot('21%s'%(i+1))
         for midpoint in range(0,len(xTickMarks)):
+            histbins = 10 ** np.linspace(np.log10(np.min(values[i][midpoint])), np.log10(global_max), 100)
             n, bins, patches = ax.hist(values[i][midpoint], bins=histbins, normed=True, cumulative=True, histtype='step', range=(global_min,global_max))
             xTickGraph.append(patches[0])
         if i==0:
             ax.set_title('Client to Server Sync')
         elif i==1:
             ax.set_title('Server to Client Sync')
-            
+        ax.set_xlabel('Logaritmic scale - Sync time [s]')    
         ax.grid(True)
         ax.set_xscale("log")
+        ax.set_xlim(right=global_max)
         ax.legend(xTickGraph,xTickMarks,fontsize=7,fancybox=True, loc='lower right').get_frame().set_alpha(0.5)
         plt.tight_layout(rect=[0, 0.03, 1, 0.90])
     
     plt.savefig(pp, format='pdf')
     plt.close()
     
-def compare_monit_cm_hist_sync_server(pp,results,runid,test_name):
+def compare_monit_cm_hist_sync_server(pp,results,runid,test_name, max_x=None):
     fig = plt.figure()     
-    plt.title('Sync time histogram for different servers\nMachine: %s, Test: %s'%(runid, test_name))
+    plt.title('Sync time cumulative distribution\nMachine: %s, Test: %s'%(runid, test_name))
     ax = plt.subplot(111)
     values = []
     xTickMarks = []
@@ -116,9 +120,8 @@ def compare_monit_cm_hist_sync_server(pp,results,runid,test_name):
         
         xTickMarks.append(key)
     
-    global_max= (np.max(global_max)) + 10    
-    ax.set_xlim(left=-0.1)
-    ax.set_xlim(right=global_max)
+    global_max= (np.max(global_max))   
+        
     ax.set_ylim(top=1.1)
     ax.set_ylim(bottom=0)
     ind = np.arange(len(xTickMarks))                # the x locations for the groups
@@ -126,11 +129,19 @@ def compare_monit_cm_hist_sync_server(pp,results,runid,test_name):
     
     # the histogram of the data
     for value in values:
-        n, bins, patches = ax.hist(value, bins=100, normed=True, cumulative=True, histtype='step', range=(-0.1,global_max))
+        histbins = 10 ** np.linspace(np.log10(np.min(value)), np.log10(global_max), 100)
+        n, bins, patches = ax.hist(value, bins=histbins, normed=True, cumulative=True, histtype='step', range=(1,global_max))
         xTickGraph.append(patches[0])
     
+    ax.set_xlim(left=-0.1)
+    
+    if max_x==None:
+        ax.set_xlim(right=global_max)
+    else:
+        ax.set_xlim(right=max_x)
+        
     ax.set_xlabel('Synchronisation time [s]')
-    ax.legend(xTickGraph,xTickMarks,fontsize=7,fancybox=True, loc='lower right').get_frame().set_alpha(0.5)
+    ax.legend(xTickGraph,xTickMarks,fontsize=12,fancybox=True, loc='lower right').get_frame().set_alpha(0.5)
 
     plt.grid(True)
     #plt.draw() 
@@ -162,51 +173,53 @@ def compare_monit_cm_hist_transf_server(pp,results,runid,server,test_name):
     values_syncid_upl_upl = {}
     values_syncid_upl_dwl = {}
     for key, objs in results.items() :
-        scs_sync_array_time_upl[key]=[]
-        values_syncid_upl_upl[key]={}
-        values_syncid_upl_dwl[key]={}
-        values[key]=[]
-        for scs_sync in objs["scs_syncs_upl"]:
-            scs_sync_array_time_upl[key].append(scs_sync["time"])
-            scs_sync_array_value_upl[scs_sync["time"]]=scs_sync["value"]
-            scs_sync_array_server_upl[scs_sync["time"]]=key
-        for obj in objs["upl_upl"]:
-            if (int(obj["syncid"]) in scs_sync_array_time_upl[key]):
-                values[key].append(obj["value"])
-                if values_syncid_upl.has_key(obj["syncid"]):
-                    values_syncid_upl[obj["syncid"]].append(obj["time"])
-                else:
-                    values_syncid_upl[obj["syncid"]]=[obj["time"]]
+        if objs!={}:
+            scs_sync_array_time_upl[key]=[]
+            values_syncid_upl_upl[key]={}
+            values_syncid_upl_dwl[key]={}
+            values[key]=[]
+            for scs_sync in objs["scs_syncs_upl"]:
+                scs_sync_array_time_upl[key].append(scs_sync["time"])
+                scs_sync_array_value_upl[scs_sync["time"]]=scs_sync["value"]
+                scs_sync_array_server_upl[scs_sync["time"]]=key
+            for obj in objs["upl_upl"]:
+                if (int(obj["syncid"]) in scs_sync_array_time_upl[key]):
+                    values[key].append(obj["value"])
+                    if values_syncid_upl.has_key(obj["syncid"]):
+                        values_syncid_upl[obj["syncid"]].append(obj["time"])
+                    else:
+                        values_syncid_upl[obj["syncid"]]=[obj["time"]]
+                        
+                    if values_syncid_upl_upl[key].has_key(obj["syncid"]):
+                        values_syncid_upl_upl[key][obj["syncid"]].append(obj["value"])
+                    else:
+                        values_syncid_upl_upl[key][obj["syncid"]]=[obj["value"]]
+            for obj in objs["upl_dwl"]:
+                if (int(obj["syncid"]) in scs_sync_array_time_upl[key]):
+                    if values_syncid_upl.has_key(obj["syncid"]):
+                        values_syncid_upl[obj["syncid"]].append(obj["time"])
+                    else:
+                        values_syncid_upl[obj["syncid"]]=[obj["time"]]
                     
-                if values_syncid_upl_upl[key].has_key(obj["syncid"]):
-                    values_syncid_upl_upl[key][obj["syncid"]].append(obj["value"])
-                else:
-                    values_syncid_upl_upl[key][obj["syncid"]]=[obj["value"]]
-        for obj in objs["upl_dwl"]:
-            if (int(obj["syncid"]) in scs_sync_array_time_upl[key]):
-                if values_syncid_upl.has_key(obj["syncid"]):
-                    values_syncid_upl[obj["syncid"]].append(obj["time"])
-                else:
-                    values_syncid_upl[obj["syncid"]]=[obj["time"]]
-                
-                if values_syncid_upl_dwl[key].has_key(obj["syncid"]):
-                    values_syncid_upl_dwl[key][obj["syncid"]].append(obj["value"])
-                else:
-                    values_syncid_upl_dwl[key][obj["syncid"]]=[obj["value"]]
-                    
-                    
-        values[key] = np.array(values[key])
-        global_max.append(np.max(values[key]))
-        global_min.append(np.min(values[key]))
+                    if values_syncid_upl_dwl[key].has_key(obj["syncid"]):
+                        values_syncid_upl_dwl[key][obj["syncid"]].append(obj["value"])
+                    else:
+                        values_syncid_upl_dwl[key][obj["syncid"]]=[obj["value"]]
+                        
+                        
+            values[key] = np.array(values[key])
+            global_max.append(np.max(values[key]))
+            global_min.append(np.min(values[key]))
     
     global_max = (np.max(global_max))
     global_min = (np.min(global_min))
     
     for key, objs in results.items() :
-        histbins = 10 ** np.linspace(np.log10(global_min), np.log10(global_max), 100)
-        n, bins, patches = ax.hist(values[key], bins=histbins, normed=True, cumulative=True, histtype='step')
-        Graph.append(patches[0]) 
-        Marks.append(key)
+        if objs!={}:
+            histbins = 10 ** np.linspace(np.log10(global_min), np.log10(global_max), 100)
+            n, bins, patches = ax.hist(values[key], bins=histbins, normed=True, cumulative=True, histtype='step')
+            Graph.append(patches[0]) 
+            Marks.append(key)
     
     ax.legend(Graph,Marks,fontsize=7,fancybox=True, loc='upper left').get_frame().set_alpha(0.5)
     ax.set_xscale("log")
@@ -236,47 +249,49 @@ def compare_monit_cm_hist_transf_server(pp,results,runid,server,test_name):
     values_syncid_dwl_upl = {}
     values_syncid_dwl_dwl = {}
     for key, objs in results.items() :
-        scs_sync_array_time_dwl[key]=[]
-        values_syncid_dwl_upl[key]={}
-        values_syncid_dwl_dwl[key]={}
-        values[key]=[]
-        for scs_sync in objs["scs_syncs_dwl"]:
-            scs_sync_array_time_dwl[key].append(scs_sync["time"])
-            scs_sync_array_value_dwl[scs_sync["time"]]=scs_sync["value"]
-            scs_sync_array_server_dwl[scs_sync["time"]]=key
-        for obj in objs["dwl_dwl"]:
-            if (int(obj["syncid"]) in scs_sync_array_time_dwl[key]):
-                values[key].append(obj["value"])
-                if values_syncid_dwl.has_key(obj["syncid"]):
-                    values_syncid_dwl[obj["syncid"]].append(obj["time"])
-                else:
-                    values_syncid_dwl[obj["syncid"]]=[obj["time"]]
-                if values_syncid_dwl_dwl[key].has_key(obj["syncid"]):
-                    values_syncid_dwl_dwl[key][obj["syncid"]].append(obj["value"])
-                else:
-                    values_syncid_dwl_dwl[key][obj["syncid"]]=[obj["value"]]
-        for obj in objs["dwl_upl"]:
-            if (int(obj["syncid"]) in scs_sync_array_time_dwl[key]):
-                if values_syncid_dwl.has_key(obj["syncid"]):
-                    values_syncid_dwl[obj["syncid"]].append(obj["time"])
-                else:
-                    values_syncid_dwl[obj["syncid"]]=[obj["time"]]
-                if values_syncid_dwl_upl[key].has_key(obj["syncid"]):
-                    values_syncid_dwl_upl[key][obj["syncid"]].append(obj["value"])
-                else:
-                    values_syncid_dwl_upl[key][obj["syncid"]]=[obj["value"]]
-        values[key] = np.array(values[key])
-        global_max.append(np.max(values[key]))
-        global_min.append(np.min(values[key]))
+        if objs!={}:
+            scs_sync_array_time_dwl[key]=[]
+            values_syncid_dwl_upl[key]={}
+            values_syncid_dwl_dwl[key]={}
+            values[key]=[]
+            for scs_sync in objs["scs_syncs_dwl"]:
+                scs_sync_array_time_dwl[key].append(scs_sync["time"])
+                scs_sync_array_value_dwl[scs_sync["time"]]=scs_sync["value"]
+                scs_sync_array_server_dwl[scs_sync["time"]]=key
+            for obj in objs["dwl_dwl"]:
+                if (int(obj["syncid"]) in scs_sync_array_time_dwl[key]):
+                    values[key].append(obj["value"])
+                    if values_syncid_dwl.has_key(obj["syncid"]):
+                        values_syncid_dwl[obj["syncid"]].append(obj["time"])
+                    else:
+                        values_syncid_dwl[obj["syncid"]]=[obj["time"]]
+                    if values_syncid_dwl_dwl[key].has_key(obj["syncid"]):
+                        values_syncid_dwl_dwl[key][obj["syncid"]].append(obj["value"])
+                    else:
+                        values_syncid_dwl_dwl[key][obj["syncid"]]=[obj["value"]]
+            for obj in objs["dwl_upl"]:
+                if (int(obj["syncid"]) in scs_sync_array_time_dwl[key]):
+                    if values_syncid_dwl.has_key(obj["syncid"]):
+                        values_syncid_dwl[obj["syncid"]].append(obj["time"])
+                    else:
+                        values_syncid_dwl[obj["syncid"]]=[obj["time"]]
+                    if values_syncid_dwl_upl[key].has_key(obj["syncid"]):
+                        values_syncid_dwl_upl[key][obj["syncid"]].append(obj["value"])
+                    else:
+                        values_syncid_dwl_upl[key][obj["syncid"]]=[obj["value"]]
+            values[key] = np.array(values[key])
+            global_max.append(np.max(values[key]))
+            global_min.append(np.min(values[key]))
         
     global_max = (np.max(global_max))
     global_min = (np.min(global_min))
     
     for key, objs in results.items() :
-        histbins = 10 ** np.linspace(np.log10(global_min), np.log10(global_max), 100)
-        n, bins, patches = ax.hist(values[key], bins=histbins, normed=True, cumulative=True, histtype='step')
-        Graph.append(patches[0]) 
-        Marks.append(key)
+        if objs!={}:
+            histbins = 10 ** np.linspace(np.log10(global_min), np.log10(global_max), 100)
+            n, bins, patches = ax.hist(values[key], bins=histbins, normed=True, cumulative=True, histtype='step')
+            Graph.append(patches[0]) 
+            Marks.append(key)
     ax.legend(Graph,Marks,fontsize=7,fancybox=True, loc='upper left').get_frame().set_alpha(0.5)
     ax.set_xscale("log")
     ax.set_xlim(left=global_min)
@@ -305,34 +320,36 @@ def compare_monit_cm_hist_transf_server(pp,results,runid,server,test_name):
     Marks = []
     global_min = []
     for key, objs in values_syncid_upl.items():   
-        if not values_server.has_key(scs_sync_array_server_upl[int(key)]):
-            values_server[scs_sync_array_server_upl[int(key)]]=[]
-            
-        if not values_server_sum.has_key(scs_sync_array_server_upl[int(key)]):
-            values_server_sum[scs_sync_array_server_upl[int(key)]]=[]
-          
-        if not values_server_diff.has_key(scs_sync_array_server_upl[int(key)]):
-            values_server_diff[scs_sync_array_server_upl[int(key)]]=[]  
-        objs.sort()     
-        obj_zero = objs[0]/1000000.0
-        obs_len = len(objs)
-        sum_diff=0.0
-        for i in range(1, obs_len):
-            difference = objs[i]/1000000.0-obj_zero
-            if difference>1.0:
-                fraction=((difference-1.0)/scs_sync_array_value_upl[int(key)])*100
-                values_server[scs_sync_array_server_upl[int(key)]].append(fraction)
-                sum_diff=sum_diff+difference-1.0
-            obj_zero = objs[i]/1000000.0
-        values_server_sum[scs_sync_array_server_upl[int(key)]].append(((objs[obs_len-1]/1000000.0-objs[0]/1000000.0)/scs_sync_array_value_upl[int(key)])*100)
-        values_server_diff[scs_sync_array_server_upl[int(key)]].append((sum_diff/scs_sync_array_value_upl[int(key)])*100)
-        global_min.append(np.min(np.array(values_server_sum[scs_sync_array_server_upl[int(key)]])))
+        if objs!={}:
+            if not values_server.has_key(scs_sync_array_server_upl[int(key)]):
+                values_server[scs_sync_array_server_upl[int(key)]]=[]
+                
+            if not values_server_sum.has_key(scs_sync_array_server_upl[int(key)]):
+                values_server_sum[scs_sync_array_server_upl[int(key)]]=[]
+              
+            if not values_server_diff.has_key(scs_sync_array_server_upl[int(key)]):
+                values_server_diff[scs_sync_array_server_upl[int(key)]]=[]  
+            objs.sort()     
+            obj_zero = objs[0]/1000000.0
+            obs_len = len(objs)
+            sum_diff=0.0
+            for i in range(1, obs_len):
+                difference = objs[i]/1000000.0-obj_zero
+                if difference>1.0:
+                    fraction=((difference-1.0)/scs_sync_array_value_upl[int(key)])*100
+                    values_server[scs_sync_array_server_upl[int(key)]].append(fraction)
+                    sum_diff=sum_diff+difference-1.0
+                obj_zero = objs[i]/1000000.0
+            values_server_sum[scs_sync_array_server_upl[int(key)]].append(((objs[obs_len-1]/1000000.0-objs[0]/1000000.0)/scs_sync_array_value_upl[int(key)])*100)
+            values_server_diff[scs_sync_array_server_upl[int(key)]].append((sum_diff/scs_sync_array_value_upl[int(key)])*100)
+            global_min.append(np.min(np.array(values_server_sum[scs_sync_array_server_upl[int(key)]])))
     
     global_min = (np.min(global_min))
     for key, objs in results.items() :
-        n, bins, patches = ax.hist(values_server_sum[key], bins=100, normed=True, cumulative=True, histtype='step', range=(global_min, 100))
-        Graph.append(patches[0]) 
-        Marks.append(key)
+        if objs!={}:
+            n, bins, patches = ax.hist(values_server_sum[key], bins=100, normed=True, cumulative=True, histtype='step', range=(global_min, 100))
+            Graph.append(patches[0]) 
+            Marks.append(key)
     ax.set_xlim(left=global_min)
     ax.set_xlim(right=100)
     ax.legend(Graph,Marks,fontsize=7,fancybox=True, loc='upper left').get_frame().set_alpha(0.5)
@@ -345,7 +362,7 @@ def compare_monit_cm_hist_transf_server(pp,results,runid,server,test_name):
     Graph = []
     Marks = []
     for key, objs in results.items():
-        if values_server[key]!=[]:
+        if objs!={} and values_server[key]!=[]:
             n, bins, patches = ax.hist(values_server[key], bins=100, normed=True, cumulative=True, histtype='step')
             Graph.append(patches[0]) 
             Marks.append(key)
@@ -359,9 +376,10 @@ def compare_monit_cm_hist_transf_server(pp,results,runid,server,test_name):
     Graph = []
     Marks = []
     for key, objs in results.items():
-        n, bins, patches = ax.hist(values_server_diff[key], bins=100, normed=True, cumulative=True, histtype='step')
-        Graph.append(patches[0]) 
-        Marks.append(key)
+        if objs!={}:
+            n, bins, patches = ax.hist(values_server_diff[key], bins=100, normed=True, cumulative=True, histtype='step')
+            Graph.append(patches[0]) 
+            Marks.append(key)
     ax.legend(Graph,Marks,fontsize=7,fancybox=True, loc='lower right').get_frame().set_alpha(0.5)
     ax.set_xlabel('Fraction [%]')
     plt.grid(True)
@@ -375,35 +393,37 @@ def compare_monit_cm_hist_transf_server(pp,results,runid,server,test_name):
     Graph = []
     Marks = []
     global_min = []
-    for key, objs in values_syncid_dwl.items():    
-        if not values_server.has_key(scs_sync_array_server_dwl[int(key)]):
-            values_server[scs_sync_array_server_dwl[int(key)]]=[]
+    for key, objs in values_syncid_dwl.items():   
+        if objs!={}: 
+            if not values_server.has_key(scs_sync_array_server_dwl[int(key)]):
+                values_server[scs_sync_array_server_dwl[int(key)]]=[]
+                
+            if not values_server_sum.has_key(scs_sync_array_server_dwl[int(key)]):
+                values_server_sum[scs_sync_array_server_dwl[int(key)]]=[]
             
-        if not values_server_sum.has_key(scs_sync_array_server_dwl[int(key)]):
-            values_server_sum[scs_sync_array_server_dwl[int(key)]]=[]
-        
-        if not values_server_diff.has_key(scs_sync_array_server_dwl[int(key)]):
-            values_server_diff[scs_sync_array_server_dwl[int(key)]]=[]
-        objs.sort() 
-        obj_zero = objs[0]/1000000.0
-        obs_len = len(objs)
-        sum_diff=0.0
-        for i in range(1, obs_len):
-            difference = objs[i]/1000000.0-obj_zero
-            if difference>1.0:
-                fraction=((difference-1.0)/scs_sync_array_value_dwl[int(key)])*100
-                values_server[scs_sync_array_server_dwl[int(key)]].append(fraction)
-                sum_diff=sum_diff+difference-1.0
-            obj_zero = objs[i]/1000000.0
-        values_server_sum[scs_sync_array_server_dwl[int(key)]].append(((objs[obs_len-1]/1000000.0-objs[0]/1000000.0)/scs_sync_array_value_dwl[int(key)])*100)
-        values_server_diff[scs_sync_array_server_dwl[int(key)]].append((sum_diff/scs_sync_array_value_dwl[int(key)])*100)
-        global_min.append(np.min(np.array(values_server_sum[scs_sync_array_server_dwl[int(key)]])))
+            if not values_server_diff.has_key(scs_sync_array_server_dwl[int(key)]):
+                values_server_diff[scs_sync_array_server_dwl[int(key)]]=[]
+            objs.sort() 
+            obj_zero = objs[0]/1000000.0
+            obs_len = len(objs)
+            sum_diff=0.0
+            for i in range(1, obs_len):
+                difference = objs[i]/1000000.0-obj_zero
+                if difference>1.0:
+                    fraction=((difference-1.0)/scs_sync_array_value_dwl[int(key)])*100
+                    values_server[scs_sync_array_server_dwl[int(key)]].append(fraction)
+                    sum_diff=sum_diff+difference-1.0
+                obj_zero = objs[i]/1000000.0
+            values_server_sum[scs_sync_array_server_dwl[int(key)]].append(((objs[obs_len-1]/1000000.0-objs[0]/1000000.0)/scs_sync_array_value_dwl[int(key)])*100)
+            values_server_diff[scs_sync_array_server_dwl[int(key)]].append((sum_diff/scs_sync_array_value_dwl[int(key)])*100)
+            global_min.append(np.min(np.array(values_server_sum[scs_sync_array_server_dwl[int(key)]])))
     
     global_min = (np.min(global_min))
     for key, objs in results.items() :
-        n, bins, patches = ax.hist(values_server_sum[key], bins=100, normed=True, cumulative=True, histtype='step', range=(global_min, 100))
-        Graph.append(patches[0]) 
-        Marks.append(key)
+        if objs!={}:
+            n, bins, patches = ax.hist(values_server_sum[key], bins=100, normed=True, cumulative=True, histtype='step', range=(global_min, 100))
+            Graph.append(patches[0]) 
+            Marks.append(key)
     ax.set_xlim(left=global_min)
     ax.set_xlim(right=100)
     ax.legend(Graph,Marks,fontsize=7,fancybox=True, loc='upper left').get_frame().set_alpha(0.5)
@@ -416,7 +436,7 @@ def compare_monit_cm_hist_transf_server(pp,results,runid,server,test_name):
     Graph = []
     Marks = []
     for key, objs in results.items():
-        if values_server[key]!=[]:
+        if objs!={} and values_server[key]!=[]:
             n, bins, patches = ax.hist(values_server[key], bins=100, normed=True, cumulative=True, histtype='step')
             Graph.append(patches[0]) 
             Marks.append(key)
@@ -430,9 +450,10 @@ def compare_monit_cm_hist_transf_server(pp,results,runid,server,test_name):
     Graph = []
     Marks = []
     for key, objs in results.items():
-        n, bins, patches = ax.hist(values_server_diff[key], bins=100, normed=True, cumulative=True, histtype='step')
-        Graph.append(patches[0]) 
-        Marks.append(key)
+        if objs!={}:
+            n, bins, patches = ax.hist(values_server_diff[key], bins=100, normed=True, cumulative=True, histtype='step')
+            Graph.append(patches[0]) 
+            Marks.append(key)
     ax.legend(Graph,Marks,fontsize=7,fancybox=True, loc='lower right').get_frame().set_alpha(0.5)
     ax.set_xlabel('Fraction [%]')
     plt.grid(True)
@@ -445,67 +466,69 @@ def compare_monit_cm_hist_transf_server(pp,results,runid,server,test_name):
     ax = fig3.add_subplot(211)
     bx = fig3.add_subplot(212)
     ax.set_title("Client to Server Upload(yellow) - Server to Client Sync Download(blue)", fontsize=12) 
-    ax.set_xlabel('Logaritmic scale - Sync time [s]')
     bx.set_title("Client to Server Download(yellow) - Server to Client Sync Upload(blue)", fontsize=12) 
-    ax.set_xlabel('Logaritmic scale - Sync time [s]')
     Marks = []
     for keys, objs in values_syncid_upl_upl.items():
-        values_syncid_array = []      
-        for key, obj in objs.items():
-            values_syncid_array.append(sum(obj))
-        x= values_syncid_array
-        midpoint = len(Marks)+0.25 
-        Marks.append(keys)
-        perc = [min(x), scoreatpercentile(x,5), scoreatpercentile(x,25),
-                       scoreatpercentile(x,50), scoreatpercentile(x,75),
-                       scoreatpercentile(x,95), max(x)]
-        #5/95
-        ax.broken_barh([(midpoint-.15,.4)], (perc[1], perc[3]-perc[1]), facecolors='y')
-        ax.broken_barh([(midpoint-.15,.4)], (perc[3], perc[5]-perc[3]), facecolors='y')
+        if objs!={}:
+            values_syncid_array = []      
+            for key, obj in objs.items():
+                values_syncid_array.append(sum(obj))
+            x= values_syncid_array
+            midpoint = len(Marks)+0.25 
+            Marks.append(keys)
+            perc = [min(x), scoreatpercentile(x,5), scoreatpercentile(x,25),
+                           scoreatpercentile(x,50), scoreatpercentile(x,75),
+                           scoreatpercentile(x,95), max(x)]
+            #5/95
+            ax.broken_barh([(midpoint-.15,.4)], (perc[1], perc[3]-perc[1]), facecolors='y')
+            ax.broken_barh([(midpoint-.15,.4)], (perc[3], perc[5]-perc[3]), facecolors='y')
         
     Marks = []
     for keys, objs in values_syncid_dwl_dwl.items():
-        values_syncid_array = []      
-        for key, obj in objs.items():
-            values_syncid_array.append(sum(obj))
-        x= values_syncid_array
-        midpoint = len(Marks)+0.75 
-        Marks.append(keys)
-        perc = [min(x), scoreatpercentile(x,5), scoreatpercentile(x,25),
-                       scoreatpercentile(x,50), scoreatpercentile(x,75),
-                       scoreatpercentile(x,95), max(x)]
-        #5/95
-        ax.broken_barh([(midpoint-.25,.4)], (perc[1], perc[3]-perc[1]), facecolors='b')
-        ax.broken_barh([(midpoint-.25,.4)], (perc[3], perc[5]-perc[3]), facecolors='b')
+        if objs!={}:
+            values_syncid_array = []      
+            for key, obj in objs.items():
+                values_syncid_array.append(sum(obj))
+            x= values_syncid_array
+            midpoint = len(Marks)+0.75 
+            Marks.append(keys)
+            perc = [min(x), scoreatpercentile(x,5), scoreatpercentile(x,25),
+                           scoreatpercentile(x,50), scoreatpercentile(x,75),
+                           scoreatpercentile(x,95), max(x)]
+            #5/95
+            ax.broken_barh([(midpoint-.25,.4)], (perc[1], perc[3]-perc[1]), facecolors='b')
+            ax.broken_barh([(midpoint-.25,.4)], (perc[3], perc[5]-perc[3]), facecolors='b')
         
     Marks = []
     for keys, objs in values_syncid_upl_dwl.items():
-        values_syncid_array = []      
-        for key, obj in objs.items():
-            values_syncid_array.append(sum(obj))
-        x= values_syncid_array
-        midpoint = len(Marks)+0.25 
-        Marks.append(keys)
-        perc = [min(x), scoreatpercentile(x,5), scoreatpercentile(x,25),
-                       scoreatpercentile(x,50), scoreatpercentile(x,75),
-                       scoreatpercentile(x,95), max(x)]
-        #5/95
-        bx.broken_barh([(midpoint-.15,.4)], (perc[1], perc[3]-perc[1]), facecolors='y')
-        bx.broken_barh([(midpoint-.15,.4)], (perc[3], perc[5]-perc[3]), facecolors='y')
+        if objs!={}:
+            values_syncid_array = []      
+            for key, obj in objs.items():
+                values_syncid_array.append(sum(obj))
+            x= values_syncid_array
+            midpoint = len(Marks)+0.25 
+            Marks.append(keys)
+            perc = [min(x), scoreatpercentile(x,5), scoreatpercentile(x,25),
+                           scoreatpercentile(x,50), scoreatpercentile(x,75),
+                           scoreatpercentile(x,95), max(x)]
+            #5/95
+            bx.broken_barh([(midpoint-.15,.4)], (perc[1], perc[3]-perc[1]), facecolors='y')
+            bx.broken_barh([(midpoint-.15,.4)], (perc[3], perc[5]-perc[3]), facecolors='y')
     Marks = []
     for keys, objs in values_syncid_dwl_upl.items():
-        values_syncid_array = []      
-        for key, obj in objs.items():
-            values_syncid_array.append(sum(obj))
-        x= values_syncid_array
-        midpoint = len(Marks)+0.75 
-        Marks.append(keys)
-        perc = [min(x), scoreatpercentile(x,5), scoreatpercentile(x,25),
-                       scoreatpercentile(x,50), scoreatpercentile(x,75),
-                       scoreatpercentile(x,95), max(x)]
-        #5/95
-        bx.broken_barh([(midpoint-.25,.4)], (perc[1], perc[3]-perc[1]), facecolors='b')
-        bx.broken_barh([(midpoint-.25,.4)], (perc[3], perc[5]-perc[3]), facecolors='b')
+        if objs!={}:
+            values_syncid_array = []      
+            for key, obj in objs.items():
+                values_syncid_array.append(sum(obj))
+            x= values_syncid_array
+            midpoint = len(Marks)+0.75 
+            Marks.append(keys)
+            perc = [min(x), scoreatpercentile(x,5), scoreatpercentile(x,25),
+                           scoreatpercentile(x,50), scoreatpercentile(x,75),
+                           scoreatpercentile(x,95), max(x)]
+            #5/95
+            bx.broken_barh([(midpoint-.25,.4)], (perc[1], perc[3]-perc[1]), facecolors='b')
+            bx.broken_barh([(midpoint-.25,.4)], (perc[3], perc[5]-perc[3]), facecolors='b')
     ind = np.arange(len(Marks)) 
     ax.set_xticks(ind+0.5)
     yticks = ax.get_yticks().tolist()
@@ -530,7 +553,7 @@ def compare_monit_cm_hist_transf_server(pp,results,runid,server,test_name):
     plt.savefig(pp, format='pdf') 
     plt.close()
     
-def compare_monit_cm_hist_transf_test(pp,results,server):
+def compare_monit_cm_hist_transf_test(pp,results,server,alias):
     def sizeof_fmt(num, suffix='B'):
         for unit in ['','k','M','G','T','P','E','Z']:
             if abs(num) < 1000.0:
@@ -540,7 +563,7 @@ def compare_monit_cm_hist_transf_test(pp,results,server):
     
     #transfer graph - UPLOADING
     fig1 = plt.figure() 
-    fig1.suptitle('Transfer Rate Characteristics - Server: %s'%(server))
+    fig1.suptitle('Transfer Rate Characteristics - Server: %s'%(alias))
     ax = fig1.add_subplot(211)
     plt.title("Client to Server Sync\nUploading Rate")  
     Graph = []
@@ -843,7 +866,7 @@ def compare_monit_cm_hist_transf_test(pp,results,server):
     plt.close()
     
     fig3 = plt.figure() 
-    fig3.suptitle('Overhead and total transfer\nServer: %s\n'%(server))
+    fig3.suptitle('Overhead and total transfer\nServer: %s\n'%(alias))
     ax = fig3.add_subplot(211)
     bx = fig3.add_subplot(212)
     ax.set_title("Client to Server Upload(yellow) - Server to Client Sync Download(blue)", fontsize=12) 
@@ -930,7 +953,7 @@ def compare_monit_cm_hist_transf_test(pp,results,server):
     plt.savefig(pp, format='pdf') 
     plt.close()
     
-def compare_time_test(pp,results,server, max_y,test_name,time_string_human):
+def compare_time_test(pp,results,server, max_y,test_name,time_string_human,alias):
     xTickMarks = range(0,25)
     ind = np.arange(len(xTickMarks)) 
     width = 1                      # the width of the bars
@@ -986,7 +1009,7 @@ def compare_time_test(pp,results,server, max_y,test_name,time_string_human):
                 title='Server to Client'
             plt.title(title)
             plt.tight_layout(rect=[0, 0.03, 1, 0.90])
-        fig.suptitle('Distributions of synchronisation times during the day\nTest: %s - %s\nTest Machine: %s, %s'%(test_name,server,key,time_string_human))
+        fig.suptitle('Distributions of synchronisation times during the day\nTest: %s - %s\nTest Machine: %s, %s'%(test_name,alias,key,time_string_human))
         plt.savefig(pp, format='pdf')
         plt.close()
         
@@ -999,6 +1022,8 @@ def compare_files_server(pp, results,tot_err,runid,test_name,time_string_human):
     xTickMarks_b = []
     xTickGraph_b = []
 
+    print "#MEASUREMENTS PASSED/FAILED"  
+    print test_name
     for key, objs in tot_err.items() :
         passed_values = []
         failed_values = []
@@ -1012,6 +1037,7 @@ def compare_files_server(pp, results,tot_err,runid,test_name,time_string_human):
                 obj2=float(objs[1][i]["count"])
             else:
                 obj2=0.0
+            print key, obj1, obj2
             failed_values.append(obj1)
             passed_values.append(obj2)
         failed_values = np.array(failed_values) 
@@ -1037,9 +1063,9 @@ def compare_files_server(pp, results,tot_err,runid,test_name,time_string_human):
     plt.savefig(pp, format='pdf')
     plt.close()
     
-def compare_files_test(pp, results,tot_err,server,time_string_human):
+def compare_files_test(pp, results,tot_err,server,time_string_human,alias):
     fig = plt.figure() 
-    fig.suptitle('Single sync runs\nServer: %s, %s'%(server, time_string_human))
+    fig.suptitle('Single sync runs\nServer: %s, %s'%(alias, time_string_human))
     ax = fig.add_subplot(121)
     bx = fig.add_subplot(122)
     values = []
@@ -1060,7 +1086,8 @@ def compare_files_test(pp, results,tot_err,server,time_string_human):
         values.append(tmp_values)
         
         xTickMarks_a.append(key)
-        
+    print "#MEASUREMENTS PASSED/FAILED"  
+    print alias   
     for key, objs in tot_err.items() :
         passed_values = []
         failed_values = []
@@ -1074,6 +1101,7 @@ def compare_files_test(pp, results,tot_err,server,time_string_human):
                 obj2=float(objs[1][i]["count"])
             else:
                 obj2=0.0
+            print key, obj1, obj2 
             failed_values.append(obj1)
             passed_values.append(obj2)
         failed_values = np.array(failed_values) 
@@ -1132,9 +1160,9 @@ def run(testset_config):
                     tot_files = {}
                     tot_err = {}
                     for server in servers:
-                        tot_files_q = list((client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and %s_testdirstruct='%s'"%(test["test_name"],"total-files",runid,server,test["test_name"],test["testdirstruct"]))).get_points())
-                        tot_failed_q = list((client.query("SELECT count(value) FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and worker_name='worker1' and value=1 and %s_testdirstruct='%s'"%(test["test_name"],"err",runid,server,test["test_name"],test["testdirstruct"]))).get_points())
-                        tot_passed_q = list((client.query("SELECT count(value) FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and worker_name='worker1' and value=0 and %s_testdirstruct='%s'"%(test["test_name"],"err",runid,server,test["test_name"],test["testdirstruct"]))).get_points())
+                        tot_files_q = list((client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and %s_testdirstruct='%s' and %s"%(test["test_name"],"total-files",runid,server,test["test_name"],test["testdirstruct"],time_string))).get_points())
+                        tot_failed_q = list((client.query("SELECT count(value) FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and worker_name='worker1' and value=1 and %s_testdirstruct='%s' and %s"%(test["test_name"],"err",runid,server,test["test_name"],test["testdirstruct"],time_string))).get_points())
+                        tot_passed_q = list((client.query("SELECT count(value) FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and worker_name='worker1' and value=0 and %s_testdirstruct='%s' and %s"%(test["test_name"],"err",runid,server,test["test_name"],test["testdirstruct"],time_string))).get_points())
                         if len(tot_files_q)!=0 and len(tot_failed_q)!=0 and len(tot_passed_q)!=0:
                             tot_files[server]=tot_files_q
                             tot_err[server]=[tot_failed_q,tot_passed_q]
@@ -1144,12 +1172,12 @@ def run(testset_config):
                     points = {}
                     for server in servers:
                         points[server] = {}
-                        scs_syncs_upl = list((client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and worker_name='worker0' and %s_testdirstruct='%s'"%(test["test_name"],"syn",runid,server,test["test_name"],test["testdirstruct"]), epoch='u')).get_points())
-                        scs_syncs_dwl = list((client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and worker_name='worker1' and %s_testdirstruct='%s'"%(test["test_name"],"syn",runid,server,test["test_name"],test["testdirstruct"]), epoch='u')).get_points())
-                        upl_upl = list((client.query("SELECT value,syncid FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and %s_testdirstruct='%s'"%(test["test_name"],"0-upl",runid,server,test["test_name"],test["testdirstruct"]), epoch='u')).get_points())
-                        dwl_dwl = list((client.query("SELECT value,syncid FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and %s_testdirstruct='%s'"%(test["test_name"],"1-dwl",runid,server,test["test_name"],test["testdirstruct"]), epoch='u')).get_points())
-                        upl_dwl = list((client.query("SELECT value,syncid FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and %s_testdirstruct='%s'"%(test["test_name"],"0-dwl",runid,server,test["test_name"],test["testdirstruct"]), epoch='u')).get_points())
-                        dwl_upl = list((client.query("SELECT value,syncid FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and %s_testdirstruct='%s'"%(test["test_name"],"1-upl",runid,server,test["test_name"],test["testdirstruct"]), epoch='u')).get_points())
+                        scs_syncs_upl = list((client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and worker_name='worker0' and %s_testdirstruct='%s' and %s"%(test["test_name"],"syn",runid,server,test["test_name"],test["testdirstruct"],time_string), epoch='u')).get_points())
+                        scs_syncs_dwl = list((client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and worker_name='worker1' and %s_testdirstruct='%s' and %s"%(test["test_name"],"syn",runid,server,test["test_name"],test["testdirstruct"],time_string), epoch='u')).get_points())
+                        upl_upl = list((client.query("SELECT value,syncid FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and %s_testdirstruct='%s' and %s"%(test["test_name"],"0-upl",runid,server,test["test_name"],test["testdirstruct"],time_string), epoch='u')).get_points())
+                        dwl_dwl = list((client.query("SELECT value,syncid FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and %s_testdirstruct='%s' and %s"%(test["test_name"],"1-dwl",runid,server,test["test_name"],test["testdirstruct"],time_string), epoch='u')).get_points())
+                        upl_dwl = list((client.query("SELECT value,syncid FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and %s_testdirstruct='%s' and %s"%(test["test_name"],"0-dwl",runid,server,test["test_name"],test["testdirstruct"],time_string), epoch='u')).get_points())
+                        dwl_upl = list((client.query("SELECT value,syncid FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and %s_testdirstruct='%s' and %s"%(test["test_name"],"1-upl",runid,server,test["test_name"],test["testdirstruct"],time_string), epoch='u')).get_points())
                         if len(scs_syncs_upl)!=0 and len(scs_syncs_dwl)!=0 and len(upl_upl)!=0 and len(dwl_dwl)!=0 and len(dwl_upl)!=0 and len(upl_dwl)!=0:
                             points[server]["upl_upl"]=upl_upl
                             points[server]["dwl_dwl"]=dwl_dwl
@@ -1162,10 +1190,10 @@ def run(testset_config):
                 if type["show"]==True and type["type"]=="cm-histogram-sync-server":
                     points = {}
                     for server in servers:
-                        tot = list((client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and %s_testdirstruct='%s'"%(test["test_name"],"total-syn",runid,server,test["test_name"],test["testdirstruct"]))).get_points())
+                        tot = list((client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and %s_testdirstruct='%s' and %s"%(test["test_name"],"total-syn",runid,server,test["test_name"],test["testdirstruct"],time_string))).get_points())
                         if len(tot)!=0:
                             points[server]=tot
-                    compare_monit_cm_hist_sync_server(pp,points,runid,test["alias"])                  
+                    compare_monit_cm_hist_sync_server(pp,points,runid,test["alias"], type["max_x"])                  
     pp.close()
     print "Writen compare pdf to %s"%pdf_path
     tests = testset_config["summary"] 
@@ -1183,7 +1211,7 @@ def run(testset_config):
                         tot_dwl = list((client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and worker_name='worker1' and %s_testdirstruct='%s' and %s"%(type["test_name"],"syn",runid,server,type["test_name"],type["testdirstruct"],time_string))).get_points())
                         if len(tot_upl)!=0 and len(tot_dwl)!=0:
                             points[runid]=[tot_upl,tot_dwl]
-                    compare_time_test(pp,points,server,type["max_y"],type["alias"],time_string_human)
+                    compare_time_test(pp,points,server,type["max_y"],type["alias"],time_string_human,test["alias"])
   
                 if type["show"]==True and type["type"]=="cm-histogram-sync-test":
                     points = {}
@@ -1195,7 +1223,7 @@ def run(testset_config):
                             tot_dwl = list((client.query("SELECT value FROM \"%s-%s\" WHERE runid='%s' and server_name='%s' and worker_name='worker1' and %s_testdirstruct='%s' and %s"%(key,"syn",runid,server,key,obj,time_string))).get_points())
                             if len(tot_upl)!=0 and len(tot_dwl)!=0:
                                 points[test_name]=[tot_upl,tot_dwl]
-                    compare_monit_cm_hist_sync_test(pp,points,server) 
+                    compare_monit_cm_hist_sync_test(pp,points,server,test["alias"]) 
                     
                 if type["show"]==True and type["type"]=="cm-histogram-transf-test":
                     points = {}
@@ -1218,7 +1246,7 @@ def run(testset_config):
                                 points[test_name]["dwl_upl"]=dwl_upl
                                 points[test_name]["scs_syncs_upl"]=scs_syncs_upl
                                 points[test_name]["scs_syncs_dwl"]=scs_syncs_dwl
-                    compare_monit_cm_hist_transf_test(pp,points,server)   
+                    compare_monit_cm_hist_transf_test(pp,points,server,test["alias"])   
                     
                 if type["show"]==True and type["type"]=="compare-files-test":
                     tot_files = {}
@@ -1234,7 +1262,7 @@ def run(testset_config):
                             if len(tot_files_q)!=0 and len(tot_failed_q)!=0 and len(tot_passed_q)!=0:
                                 tot_files[test_name]=tot_files_q
                                 tot_err[test_name]=[tot_failed_q,tot_passed_q]
-                    compare_files_test(pp,tot_files,tot_err,server,time_string_human)
+                    compare_files_test(pp,tot_files,tot_err,server,time_string_human,test["alias"])
                 
             print "Writen %s summary pdf to %s"%(server,pdf_path)
             pp.close() 
