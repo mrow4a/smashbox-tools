@@ -24,11 +24,11 @@ This set of utilities is created to support the smashbox analytical setup consis
 
 Running the analyse script with default config file analyse.config
 
-``./analyse``
+``sim-tools/analyse``
 
 Running the analyse script with config file located in different place of with different name
 
-``./analyse examples/demo.config``
+``sim-tools/analyse examples/demo.config``
 
 Config JSON has a structure:
 
@@ -88,3 +88,25 @@ Graph types are described as below and you can browse an examples of them under 
        └── cm-histogram-transf-test        : Detailed description of the synchronisation runs in terms of the transfered data comparing different servers; specified type of the test and test machine
        
 </pre>
+
+You can browse an example in the ``examples`` folder, but please mind the following fields for some graphs:
+
+* "compare-time-test" >> parameter "max_y" which sets maximum sync time at the Y-axis
+* "cm-histogram-sync-server" >> parameters "max_x" which sets maximum sync time at the X-axis
+
+#Docker smash restart
+Running by:
+``admin-tools/docker-smash-restart DOCKER_CONTAINER_NAME``
+Remember, that you have to be with root permisions to make operations on Docker's containers
+
+#Backup files
+To pull records in database to the local machine
+
+``admin-tools/backup pull`` 
+
+or 
+
+
+``admin-tools/backup pull examples/backup.config``
+
+Exemplary backup configuration file is in the examples folder.
